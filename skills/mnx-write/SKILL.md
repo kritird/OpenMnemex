@@ -1,6 +1,6 @@
 ---
 name: mnx-write
-description: Capture the durable knowledge produced in the current build session into a Mnemex Protocol knowledge graph. Use this whenever a user finishes building or designing something and wants to persist what was learned — domain facts AND the patterns/decisions surfaced in human review — into the graph, or says "save this to the knowledge graph", "remember this for next time", "ingest this", or "write this up as knowledge". Runs in the same session so it can read the artifact and the review/clarification points from context. Extracts, reconciles against existing nodes, shows a change plan for approval, then applies atomically behind a team lock.
+description: Capture the durable knowledge produced in the current build session into a Mnemex Context Graph knowledge graph. Use this whenever a user finishes building or designing something and wants to persist what was learned — domain facts AND the patterns/decisions surfaced in human review — into the graph, or says "save this to the knowledge graph", "remember this for next time", "ingest this", or "write this up as knowledge". Runs in the same session so it can read the artifact and the review/clarification points from context. Extracts, reconciles against existing nodes, shows a change plan for approval, then applies atomically behind a team lock.
 ---
 
 # mnx-write — ingest a session into the graph

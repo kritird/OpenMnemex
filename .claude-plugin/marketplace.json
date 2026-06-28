@@ -2,14 +2,14 @@
   "name": "mnemex-marketplace",
   "owner": {
     "name": "Kriti",
-    "url": "https://github.com/USERNAME"
+    "url": "https://github.com/kritird"
   },
   "metadata": {
-    "description": "Marketplace hosting the Mnemex Protocol plugin and related agent-memory tooling."
+    "description": "Marketplace hosting the Mnemex Context Graph plugin and related agent-memory tooling."
   },
   "plugins": [
     {
-      "name": "mnemex-protocol",
+      "name": "mnemex-context-graph",
       "source": "./",
       "description": "Self-pruning knowledge context graph for agents (read / write / gc / doctor)."
     }

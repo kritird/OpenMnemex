@@ -1,6 +1,6 @@
 # 00 — Overview
 
-> Part of the **Mnemex Protocol** standard. Read the documents in `docs/` in order; this one states
+> Part of the **Mnemex Context Graph** standard. Read the documents in `docs/` in order; this one states
 > the thesis and the design goals in brief, and the rest expand each piece.
 
 ## The thesis

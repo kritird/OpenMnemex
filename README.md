@@ -1,4 +1,4 @@
-# Mnemex Protocol
+# Mnemex Context Graph
 
 **A self-pruning, human-memory-modeled knowledge context graph for AI agents.**
 

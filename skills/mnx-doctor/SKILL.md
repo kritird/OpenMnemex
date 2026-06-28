@@ -1,6 +1,6 @@
 ---
 name: mnx-doctor
-description: Validate and repair a Mnemex Protocol knowledge graph. Use this whenever the user wants to check the integrity/health of the knowledge graph, fix drift, after a manual edit to nodes, or as a gate before committing graph changes — and it runs automatically at the end of every mnx-write and mnx-gc apply. Checks all integrity invariants (edge targets exist, index matches the folder, denormalized copies are fresh, reverse-map consistent, no dangling edges, hot bound, cross-links complete, config drift) and can self-heal DERIVED files without touching node knowledge.
+description: Validate and repair a Mnemex Context Graph knowledge graph. Use this whenever the user wants to check the integrity/health of the knowledge graph, fix drift, after a manual edit to nodes, or as a gate before committing graph changes — and it runs automatically at the end of every mnx-write and mnx-gc apply. Checks all integrity invariants (edge targets exist, index matches the folder, denormalized copies are fresh, reverse-map consistent, no dangling edges, hot bound, cross-links complete, config drift) and can self-heal DERIVED files without touching node knowledge.
 ---
 
 # mnx-doctor — validator and self-healer

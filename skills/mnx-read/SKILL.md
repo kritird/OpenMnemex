@@ -1,6 +1,6 @@
 ---
 name: mnx-read
-description: Retrieve knowledge from a Mnemex Protocol knowledge graph. Use this whenever the user asks a question that should be answered from accumulated domain knowledge or patterns stored in a Mnemex repo, references "the knowledge graph", "what we know about", "our patterns for", or wants prior domain context loaded before a task — even if they don't say "mnemex". Routes structurally through tiered indexes, reads in chunks to stay within context budget, expands only needed nodes, and stamps usage. Pure with respect to knowledge (never rewrites nodes or indexes).
+description: Retrieve knowledge from a Mnemex Context Graph knowledge graph. Use this whenever the user asks a question that should be answered from accumulated domain knowledge or patterns stored in a Mnemex repo, references "the knowledge graph", "what we know about", "our patterns for", or wants prior domain context loaded before a task — even if they don't say "mnemex". Routes structurally through tiered indexes, reads in chunks to stay within context budget, expands only needed nodes, and stamps usage. Pure with respect to knowledge (never rewrites nodes or indexes).
 ---
 
 # mnx-read — tiered, budget-aware retrieval

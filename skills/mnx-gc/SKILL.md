@@ -1,6 +1,6 @@
 ---
 name: mnx-gc
-description: Run the Mnemex Protocol maintenance pass over a knowledge graph — compact usage stamps, recompute decay and structural strength, re-tier nodes into hot/warm/cold, tombstone stale nodes, sever their edges, and regenerate navigation. Use this whenever the user asks to run maintenance/garbage-collection/compaction on the knowledge graph, prune stale knowledge, "clean up the graph", or when mnx-read reported maintenance is overdue. Strictly snapshot-then-apply, locked, atomic, and recoverable.
+description: Run the Mnemex Context Graph maintenance pass over a knowledge graph — compact usage stamps, recompute decay and structural strength, re-tier nodes into hot/warm/cold, tombstone stale nodes, sever their edges, and regenerate navigation. Use this whenever the user asks to run maintenance/garbage-collection/compaction on the knowledge graph, prune stale knowledge, "clean up the graph", or when mnx-read reported maintenance is overdue. Strictly snapshot-then-apply, locked, atomic, and recoverable.
 ---
 
 # mnx-gc — the maintenance pass

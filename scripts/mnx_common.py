@@ -1,4 +1,4 @@
-"""mnx_common.py — shared primitives for the Mnemex Protocol.
+"""mnx_common.py — shared primitives for the Mnemex Context Graph.
 
 The single source of truth for time, parsing, and id rules. Every other Mnemex
 script imports from here; nothing else writes a timestamp or mints an id.
