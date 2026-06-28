@@ -13,7 +13,7 @@ script (Doc 06), not skill prose. The skill calls the script and reasons about t
 
 ## 1. `mnx-read` — retrieval (pure w.r.t. knowledge)
 
-**Command:** `/mnemex-protocol:mnx-read <question or task>`
+**Command:** `/mnemex-context-graph:mnx-read <question or task>`
 
 **Phases:**
 
@@ -42,7 +42,7 @@ script (Doc 06), not skill prose. The skill calls the script and reasons about t
 
 ## 2. `mnx-write` — ingest the session into the graph (gated)
 
-**Command:** `/mnemex-protocol:mnx-write [--cluster <path>] [--dry-run]`
+**Command:** `/mnemex-context-graph:mnx-write [--cluster <path>] [--dry-run]`
 
 Runs **in the same session** that built the artifact, so it can read the artifact *and* the human
 review/clarification points from context (those are where the *how* lives and exist only in the
@@ -68,7 +68,7 @@ conversation). Four phases; **only the last mutates.**
 
 ## 3. `mnx-gc` — the maintenance pass (locked, atomic, recoverable)
 
-**Command:** `/mnemex-protocol:mnx-gc [--team <name>] [--apply] [--dry-run]`
+**Command:** `/mnemex-context-graph:mnx-gc [--team <name>] [--apply] [--dry-run]`
 
 Default is propose-then-confirm; `--apply` runs end-to-end non-interactively (for a scheduled job).
 The algorithm is **snapshot-then-apply** and is specified in full in
@@ -92,7 +92,7 @@ The algorithm is **snapshot-then-apply** and is specified in full in
 
 ## 4. `mnx-doctor` — the validator (and self-healer)
 
-**Command:** `/mnemex-protocol:mnx-doctor [--fix] [--team <name>]`
+**Command:** `/mnemex-context-graph:mnx-doctor [--fix] [--team <name>]`
 
 Checks every invariant (full list in [`08-invariants-and-failure-modes.md`](08-invariants-and-failure-modes.md)):
 edge targets exist; front-matter schema valid; index node-set matches folder; `summary`/`aliases`
@@ -106,7 +106,7 @@ available as a pre-commit hook.
 
 ## 5. `mnx-init` — scaffold a knowledge repo
 
-**Command:** `/mnemex-protocol:mnx-init [--team <name>]`
+**Command:** `/mnemex-context-graph:mnx-init [--team <name>]`
 
 Creates `index.md`, `mnemex.config.md` (from `config/mnemex.config.md` defaults), `.mnemex/`, and a
 first `team-<name>/` skeleton. Idempotent.

@@ -17,7 +17,7 @@ Background: `docs/01-rationale-and-concepts.md`, `docs/02-architecture.md`. Help
 
 ### 1. Overdue / config-drift check (warn only)
 Run `mnx_compact.py overdue`. If compaction is overdue or `λ`/`config_version` has drifted, tell the
-user in one line: *"Knowledge maintenance is N days overdue — run `/mnemex-protocol:mnx-gc`."* You may
+user in one line: *"Knowledge maintenance is N days overdue — run `/mnemex-context-graph:mnx-gc`."* You may
 append one `__maintenance-due__` marker line to the nearest registry. **Do not compact. Do not run gc.**
 
 ### 2. Route (chunk-1 reads only)

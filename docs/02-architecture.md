@@ -161,7 +161,7 @@ to reason about two decay rates. See [`07-configuration.md`](07-configuration.md
 
 - compares `now − last_compaction` (and/or writes-since) against the cadence, and
 - if overdue, **emits a notice** to the user — *“knowledge maintenance is N days overdue; run
-  `/mnemex-protocol:mnx-gc`”* — and may append a single `maintenance-due` marker line to the registry
+  `/mnemex-context-graph:mnx-gc`”* — and may append a single `maintenance-due` marker line to the registry
   (still append-only).
 
 **`mnx-read` never performs compaction itself.** This is a hard rule. Letting a read compact would put
