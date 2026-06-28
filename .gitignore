@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Mnemex runtime state that should NOT be versioned in the PLUGIN repo.
+# (In a KNOWLEDGE repo you may choose to commit highwater/ and config_version
+#  for reproducibility, but the transient lock/plan are always ignored.)
+.mnemex/team.lock
+.mnemex/pass.plan.json
+
+# OS
+.DS_Store

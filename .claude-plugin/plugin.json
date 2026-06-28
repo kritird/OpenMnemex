@@ -1,0 +1,21 @@
+{
+  "name": "mnemex-protocol",
+  "version": "0.1.0",
+  "description": "Mnemex Protocol — a self-pruning, human-memory-modeled knowledge context graph for AI agents. Captures domain knowledge and patterns from build sessions into a file-based graph with hot/warm/cold memory tiers, lazy exponential decay, and deterministic maintenance. Skills: mnx-read, mnx-write, mnx-gc, mnx-doctor.",
+  "author": {
+    "name": "Kriti",
+    "url": "https://github.com/USERNAME"
+  },
+  "homepage": "https://github.com/USERNAME/mnemex-protocol",
+  "repository": "https://github.com/USERNAME/mnemex-protocol",
+  "license": "MIT",
+  "keywords": [
+    "knowledge-graph",
+    "agent-memory",
+    "rag",
+    "context-engineering",
+    "spaced-repetition",
+    "self-pruning",
+    "claude-code"
+  ]
+}
