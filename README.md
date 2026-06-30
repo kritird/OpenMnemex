@@ -7,7 +7,7 @@
 ╚═╝     ╚═╝  ╚═╝  ╚═══╝  ╚══════╝  ╚═╝     ╚═╝  ╚══════╝  ╚═╝  ╚═╝
 ```
 
-<p align="center"><b>Long-term agent memory for LLMs — a self-pruning, human-memory-modeled knowledge context graph.</b></p>
+<p align="center"><b>Auto-memory for LLM agents — it decides what mattered and keeps it, so you don't have to. A self-pruning, human-memory-modeled knowledge context graph.</b></p>
 
 <p align="center">
   <img alt="status" src="https://img.shields.io/badge/status-v0.1.0-success">
@@ -18,8 +18,9 @@
   <img alt="vectors" src="https://img.shields.io/badge/vectors-none-critical">
 </p>
 
-> 🧠 Persistent, navigable, context-budget-aware **agent memory** with no vector database, no embedding
-> pipeline, and no server. Just Markdown in a git repo. Works as a Claude Code plugin.
+> 🧠 Self-curating, navigable, context-budget-aware **agent memory** that judges your session for
+> what's worth keeping — with no vector database, no embedding pipeline, and no server. Just Markdown
+> in a git repo. Works as a Claude Code plugin.
 
 Mnemex (from *Mnemosyne*, the personification of memory, + the engineering suffix *-ex*) is a
 specification **and** a Claude Code plugin for capturing the durable knowledge an agent produces —
@@ -73,6 +74,33 @@ flowchart LR
 
 The full reasoning behind each design choice is in
 [`docs/01-rationale-and-concepts.md`](docs/01-rationale-and-concepts.md).
+
+---
+
+## 🧠 It remembers like you do — automatically
+
+You don't consciously decide to memorize everything that happens in a conversation. Your mind
+quietly judges, in the background, what was *significant* and what was noise — and keeps the former
+without you ever asking it to. **Mnemex is auto-memory in exactly that sense.** You do the work; it
+watches the session and decides what is worth keeping.
+
+When a session ends, Mnemex looks at what actually happened and asks the questions a person would:
+
+- **Is this relevant?** — does it generalize beyond this one conversation, or was it throwaway scaffolding?
+- **Is this significant?** — a durable domain fact or a hard-won review decision, versus an incidental detail?
+- **Is this novel?** — something the graph doesn't already know, versus a restatement of what's there?
+
+It **captures the knowledge that passes** and **ignores the rest.** Concretely, capture extracts
+candidate atoms from the session and scores each one `now` / `later` / `not-needed` — the explicit
+keep / defer / forget judgment. The author doesn't curate, tag, or decide what to file away; that
+salience call is Mnemex's job, and what survives later rises or decays on its own through the
+🔥 hot / 🌤️ warm / ❄️ cold tiers as it gets used or stops being used.
+
+The author doesn't worry about any of this. You build; Mnemex remembers what mattered. 🧭
+
+> The judgment is reviewable, not a black box: capture stages locally and you can inspect or
+> un-stage anything (`mnx-status`, `mnx-capture --drop`) before a deliberate `mnx-promote` commits
+> it to the shared graph. *Automatic, but never unaccountable.*
 
 ---
 
