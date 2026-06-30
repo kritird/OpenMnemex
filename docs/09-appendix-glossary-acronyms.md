@@ -1,8 +1,8 @@
-# 09 — Appendix: Glossary, Acronyms, Parameters, FAQ
+# 📖 09 — Appendix: Glossary, Acronyms, Parameters, FAQ
 
 ---
 
-## A. Glossary
+## 🔤 A. Glossary
 
 **Cluster** — a leaf folder that directly contains node files (e.g. `team-payments/settlement/`). The
 unit of locking, compaction, and budget.
@@ -70,7 +70,7 @@ counts as “used”.
 
 ---
 
-## B. Acronyms (full forms)
+## 🔡 B. Acronyms (full forms)
 
 | Acronym | Expansion |
 |---|---|
@@ -96,7 +96,7 @@ counts as “used”.
 
 ---
 
-## C. Parameter reference
+## 🎚️ C. Parameter reference
 
 | Parameter | Default | Meaning | Failure it guards / job |
 |---|---|---|---|
@@ -118,7 +118,7 @@ counts as “used”.
 
 ---
 
-## D. FAQ
+## ❓ D. FAQ
 
 **Why not just use a vector database / RAG?** Cost and opacity. An embedding pipeline and a vector
 index are infrastructure to operate, and their retrieval is not human-readable or git-diffable. Mnemex
@@ -145,7 +145,7 @@ concurrency hazards on its own.
 
 ---
 
-## E. References (concepts this design draws on)
+## 📚 E. References (concepts this design draws on)
 
 - Ebbinghaus forgetting curve; spaced-repetition scheduling (memory strength, recall-driven interval
   growth).

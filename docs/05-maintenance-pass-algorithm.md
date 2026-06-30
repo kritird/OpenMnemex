@@ -1,19 +1,47 @@
-# 05 — The Maintenance Pass Algorithm
+# ♻️ 05 — The Maintenance Pass Algorithm
 
-`mnx-gc` carries three coupled jobs — **compaction, re-tiering, budget-split** — plus death and edge
-hygiene. Coupling makes ordering critical. The whole algorithm is built on one principle:
+`mnx-consolidate` carries three coupled jobs — **compaction, re-tiering, budget handling** — plus death
+and edge hygiene. It is **not a user command**: it is the **back half of `mnx-promote`**, run over the
+post-merge graph inside promote's single plan / lock / transaction (so the doctor + commit at the end
+belong to promote). Coupling makes ordering critical. The whole algorithm is built on one principle:
 
-> **Snapshot-then-apply.** Compute *every* decision against a single frozen view of the graph, then
-> apply them all. Never read state you have already mutated within the same pass.
+> [!IMPORTANT]
+> 🧊 **Snapshot-then-apply.** Compute *every* decision against a single frozen view of the graph, then
+> apply them all. **Never read state you have already mutated within the same pass.**
 
 This one rule resolves the ordering-corruption, the structural-strength-staleness, and most of the
 concurrency hazards catalogued in [`08-invariants-and-failure-modes.md`](08-invariants-and-failure-modes.md).
 
 Acronyms: **HWM** = High-Water Mark; **TTL** = Time-To-Live.
 
+```mermaid
+flowchart TD
+    PF[["🔐 Pre-flight<br/>lock · crash-recovery · re-normalize"]] --> A
+    subgraph A["🅰️ MARK — read-only · parallel per cluster"]
+        direction TB
+        A1[❄️ freeze snapshot] --> A2[📊 fold registry → scores]
+        A2 --> A3[🕸️ structural strength] --> A4[🎯 retention + target tier]
+        A4 --> A5[🪦 death candidates<br/><i>conjunction gate</i>] --> A6[💰 budget / split / chain]
+    end
+    A -->|"📝 pass.plan.json"| B
+    subgraph B["🅱️ SWEEP — serial · under lock · one txn"]
+        direction TB
+        B1[🔁 relabel tiers] --> B2[🪦 tombstone + sever edges]
+        B2 --> B3[🔗 rebuild index + cross-links]
+        B3 --> B4[🚩 advance HWM + stamp config]
+        B4 --> B5[✅ doctor → 📦 one git commit]
+    end
+    classDef pf fill:#0e5a5a,stroke:#3cc,color:#fff;
+    classDef a fill:#14507a,stroke:#39c,color:#fff;
+    classDef b fill:#4b2e83,stroke:#a98ce0,color:#fff;
+    class PF pf;
+    class A1,A2,A3,A4,A5,A6 a;
+    class B1,B2,B3,B4,B5 b;
+```
+
 ---
 
-## Pre-flight
+## 🔐 Pre-flight
 
 ```
 acquire team.lock                        # one mutating op per team (Doc 02 §9)
@@ -30,7 +58,7 @@ new-λ decay.
 
 ---
 
-## Phase A — MARK  (read-only; parallelizable across clusters)
+## 🅰️ Phase A — MARK  (read-only; parallelizable across clusters)
 
 No file in the graph is mutated in Phase A. Sub-agents may run one cluster each, all reading the same
 shared `cross-links.md`.
@@ -70,8 +98,10 @@ for each node X in cold tier:
 for each cluster C:
     if active_node_count(C) > node_budget:
         plan: sweep cold nodes out of the active index sections   # logical, not a move
+        split the index along the declared `domain:` sub-key      # mnx_index.shard_index
         if still > node_budget on a single domain sub-key:
-            ESCALATE_TO_HUMAN(C, sub-key)        # never auto-invent folder structure
+            CHAIN the index into index.NNN.md continuation chunks  # B-tree leaf; regenerate_index does it
+            ESCALATE_TO_HUMAN(C, sub-key) only if chaining is undesirable   # genuine last resort
 
 write pass.plan.json  ← every decision above, addressed by id + path
 ```
@@ -85,7 +115,7 @@ Key guarantees from operating on `SNAPSHOT`:
 
 ---
 
-## Phase B — SWEEP  (serial; under the lock; one transaction)
+## 🅱️ Phase B — SWEEP  (serial; under the lock; one transaction)
 
 Apply the plan exactly. Order within Phase B is fixed so derived files are rebuilt *after* the truth
 they derive from is final.
@@ -110,7 +140,7 @@ stamp .mnemex/last_compaction[team], config_version/λ
 
 # 4. verify + commit
 run mnx-doctor   → must pass
-git add -A && git commit -m "mnx-gc: <summary of plan>"
+git add -A && git commit -m "mnx-promote: <summary of merge + consolidation>"   # promote owns the commit
 remove pass.plan.json
 release team.lock
 ```
@@ -120,7 +150,7 @@ succeeded and validated) or it does not (recover from the plan on next run).
 
 ---
 
-## Why each ordering choice matters (quick reference)
+## 🧮 Why each ordering choice matters (quick reference)
 
 | Choice | Prevents |
 |---|---|
@@ -135,7 +165,7 @@ succeeded and validated) or it does not (recover from the plan on next run).
 
 ---
 
-## Parallel mark, serial sweep
+## ⚡ Parallel mark, serial sweep
 
 Phase A is embarrassingly parallel (read-only per cluster). Phase B must be serial because tombstoning
 a node in one cluster rewrites referrer nodes in sibling clusters (cross-cluster severing), and two

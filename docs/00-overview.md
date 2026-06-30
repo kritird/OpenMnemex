@@ -1,9 +1,9 @@
-# 00 — Overview
+# 🧭 00 — Overview
 
 > Part of the **Mnemex Context Graph** standard. Read the documents in `docs/` in order; this one states
 > the thesis and the design goals in brief, and the rest expand each piece.
 
-## The thesis
+## 🎯 The thesis
 
 An agent that builds something — a service, a spec, an analysis — generates two kinds of durable
 knowledge in the process:
@@ -17,7 +17,21 @@ knowledge in the process:
 Both evaporate at the end of a session. Mnemex captures them into a **file-based knowledge graph**
 that a future agent can navigate cheaply, that maintains itself, and that forgets gracefully.
 
-## Design goals (and the constraints they came from)
+```mermaid
+flowchart LR
+    S([💬 Session]) --> W["🧱 The <b>what</b><br/>domain facts"]
+    S --> H["🛠️ The <b>how</b><br/>patterns + review decisions"]
+    W --> G[(📄 Markdown<br/>knowledge graph)]
+    H --> G
+    G --> R[♻️ Self-maintaining ·<br/>graceful forgetting]
+    R --> F([🔮 Future agent<br/>navigates cheaply])
+    classDef k fill:#0e7a0d,stroke:#0a5,color:#fff;
+    classDef g fill:#14507a,stroke:#39c,color:#fff;
+    class W,H,F k;
+    class G,R g;
+```
+
+## 🏗️ Design goals (and the constraints they came from)
 
 1. **No vectors, no server, no embedding pipeline.** Retrieval is *structural* — folder routing plus
    small index files read in chunks — not semantic search. This is a hard requirement: the cost of
@@ -43,14 +57,29 @@ that a future agent can navigate cheaply, that maintains itself, and that forget
    keys* and *splitting generated indexes*, never by moving the knowledge into a different kind of
    system.
 
-## The one idea to take away
+## 💎 The one idea to take away
 
-**Budget, ranking, and forgetting are a single subsystem.** When a cluster grows past its size
-budget, the question “what should I push out of the active set?” has the same answer as “what has
-decayed?” which has the same answer as “what should I forget?” One ranking, computed one way, drives
-all three. Almost every subtle bug found while designing Mnemex came from a place where this
-subsystem touched state that it was also mutating — and almost all of them are resolved by one
-principle: **snapshot-then-apply** (compute every decision against a frozen view, then apply).
+> [!IMPORTANT]
+> **Budget, ranking, and forgetting are a single subsystem.** When a cluster grows past its size
+> budget, the question “what should I push out of the active set?” has the same answer as “what has
+> decayed?” which has the same answer as “what should I forget?” **One ranking, computed one way, drives
+> all three.**
+
+```mermaid
+flowchart TD
+    RANK[["⚖️ ONE ranking<br/>retention = f(usage_decay, structural_strength)"]]
+    RANK --> B["💰 Budget<br/><i>what to push out of the active set?</i>"]
+    RANK --> K["📉 Decay<br/><i>what has decayed?</i>"]
+    RANK --> F["🗑️ Forgetting<br/><i>what should I forget?</i>"]
+    classDef hub fill:#4b2e83,stroke:#a98ce0,color:#fff;
+    classDef leaf fill:#14507a,stroke:#39c,color:#fff;
+    class RANK hub;
+    class B,K,F leaf;
+```
+
+Wherever this subsystem reads state it is also mutating, consistency breaks subtly. The protocol
+forecloses that entire class with one principle: **snapshot-then-apply** — compute every decision
+against a frozen view, then apply.
 
 See [`02-architecture.md`](02-architecture.md) for the subsystem, and
 [`05-maintenance-pass-algorithm.md`](05-maintenance-pass-algorithm.md) for the principle in code-shape.

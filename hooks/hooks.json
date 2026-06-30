@@ -6,8 +6,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" session-start",
-            "timeout": 10
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" session-start",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" stop",
+            "timeout": 60
           }
         ]
       }
@@ -18,8 +30,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" session-end",
-            "timeout": 10
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" session-end",
+            "timeout": 60
           }
         ]
       }
@@ -30,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" pre-commit-gate",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" pre-commit-gate",
             "timeout": 30
           }
         ]
@@ -42,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" post-apply-check",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py\" post-apply-check",
             "timeout": 15
           }
         ]

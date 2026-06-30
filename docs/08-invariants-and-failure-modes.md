@@ -1,19 +1,20 @@
-# 08 — Invariants and Failure Modes
+# 🛡️ 08 — Invariants and Failure Modes
 
 Two halves. First, the **invariants** `mnx-doctor` enforces — the contract that keeps an LLM-authored
-graph trustworthy. Second, the **failure-mode register** — the breaks found while pressure-testing the
-design, each with its mitigation and where in the standard it is handled. A correct implementation must
+graph trustworthy. Second, the **failure-mode register** — the failure modes the design must defend
+against, each with its mitigation and where in the standard it is handled. A correct implementation must
 satisfy every invariant and defend every failure mode marked *hardened*; the two *soft* items are
 documented limits, not defects.
 
 ---
 
-## Part A — Validator invariants (`mnx-doctor`)
+## 🅰️ Part A — Validator invariants (`mnx-doctor`)
 
-Severity: **E** = error (graph is corrupt; block commits), **W** = warning (drift; auto-fixable),
-**I** = info (advisory).
+> [!NOTE]
+> **Severity legend** — 🔴 **E** = error (graph is corrupt; block commits) · 🟡 **W** = warning (drift;
+> auto-fixable via `--fix`) · 🔵 **I** = info (advisory).
 
-### Referential integrity
+### 🔗 Referential integrity
 1. **(E) Edge targets exist.** Every `to` in every node's `edges` resolves to an existing node id.
 2. **(E) No dangling edges to tombstoned/removed nodes.** After any death, no live edge points at the
    dead id unless repointed to its `superseded-by`.
@@ -24,43 +25,55 @@ Severity: **E** = error (graph is corrupt; block commits), **W** = warning (drif
 5. **(I) Soft references flagged.** Cross-team `references` are present-but-unverified; report dangling
    ones without failing (they carry the no-integrity disclaimer).
 
-### Schema
+### 📋 Schema
 6. **(E) Front-matter valid.** `id` valid slug; `type ∈ {domain,pattern}`; `status` valid; `pattern`
    nodes have a non-null `trigger`; timestamps are UTC ISO-8601.
 7. **(E) Id stability.** A node's `id` matches its historical id (ids never change); detect a changed id
    as corruption.
 
-### Derived-state freshness
+### 🔄 Derived-state freshness
 8. **(E) Index ↔ folder node-set match.** The index's node-set equals the folder's actual nodes.
 9. **(E) Denormalization fresh.** `index.summary == node.summary` and `index.aliases == node.aliases`
    for every node. *(This is the invariant that justifies storing `summary`/`aliases` copies in the
    index for match-without-body-load.)*
 10. **(W) Materialized state present.** Every active node has `strength`/`last_update` in the index.
 
-### Tier / budget
+### 🌡️ Tier / budget
 11. **(E) Hot bound.** Each cluster's `hot` section length ≤ `hot_k`.
 12. **(W) Budget.** No cluster index exceeds `node_budget` active nodes (else: split or escalate).
 13. **(I) Orphan flag.** Nodes with zero incoming edges (local + cross) are flagged (candidates the
     conjunction gate may eventually demote).
 
-### Telemetry / state
+### 📡 Telemetry / state
 14. **(E) High-water monotonic.** Each cluster's HWM only advances; registry has no lines below a
     truncated mark.
 15. **(W) Config drift.** `config_version`/`λ` in `.mnemex/` matches `mnemex.config.md`, or a
     re-normalization is pending.
 16. **(E) No stranded pass.** No `pass.plan.json` present without an active lock (else: crash recovery).
 
-`--fix` resolves all **W** items by regenerating derived files from the nodes; **E** items involving
-truth (1, 2, 6, 7) require human/skill attention because they indicate node-level corruption, not
-derived drift.
+### 🕸️ Derivability & mesh
+17. **(E) Derivability.** Every derived file (`index*`, tier files, `cross-links.md`, `phonebook*`, org
+    `index.md`) regenerates from truth (nodes + registry). This is the invariant that makes "throw away
+    and recompute" always safe, and it requires the `mnx-regen` merge driver to be registered in a git
+    graph (else derived-file conflicts are 3-way-merged instead of regenerated).
+18. **(W) Phonebook completeness + path accuracy.** Every active node appears once in its team phonebook
+    with correct `cluster_path`/`tier`/`status`; no stale or dead rows.
+19. **(I) Unresolved mentions (red links).** Every name-mention either resolves to an id or is flagged as
+    a red link (demand for an unwritten node).
+20. **(I) Org-directory completeness.** Every team with nodes appears in the org directory (root
+    `index.md`) with its domains.
+
+`--fix` resolves all **W** items by regenerating derived files from the nodes (and registers the
+`mnx-regen` merge driver); **E** items involving truth (1, 2, 6, 7) require human/skill attention because
+they indicate node-level corruption, not derived drift.
 
 ---
 
-## Part B — Failure-mode register
+## 🅱️ Part B — Failure-mode register
 
 Each entry: the break, its mitigation, and the doc that owns the fix.
 
-### Hardened (must be defended)
+### ✅ Hardened (must be defended)
 
 | # | Failure | Mitigation | Owned by |
 |---|---|---|---|
@@ -79,8 +92,9 @@ Each entry: the break, its mitigation, and the doc that owns the fix.
 | F13 | **Denormalization staleness** — re-authoring a node's summary leaves a stale index copy ⇒ matching on wrong text. | **Invariant 9** enforced by `mnx-doctor`; regenerate on write/gc apply. | Part A, Doc 06 |
 | F14 | **Usage starvation** — model under-reports the manifest ⇒ used nodes decay and wrongly go cold (silent knowledge loss). | **Mandatory disposition on every body-load**; structural strength as deterministic ballast. | Doc 01 §6, §9 |
 | F15 | **Pattern sprawl** — the same “how” authored three ways. | **`trigger` field**; match patterns on trigger, merge near-dupes at the plan gate. | Doc 01 §2 |
+| F16 | **Plugin-state contamination** — a process writes state (config, markers, locks, staging) into the plugin's own directory/git ⇒ state lost on reinstall/upgrade, dirty tree in the plugin checkout, breaks on a read-only install. | **State isolation**: graph root resolved explicitly (never cwd, never plugin path); all state in the graph repo, `~/.claude/mnemex/`, or the project's `.mnemex.md`; the plugin dir is read-only. | Doc 02 §12 |
 
-### Soft (documented limits, not defects)
+### 🌫️ Soft (documented limits, not defects)
 
 | # | Limit | Why it can't be fully hardened | Containment |
 |---|---|---|---|
@@ -89,7 +103,7 @@ Each entry: the break, its mitigation, and the doc that owns the fix.
 
 ---
 
-## How the soft limits are surfaced to users
+## 🔎 How the soft limits are surfaced to users
 
 Honesty is part of the standard. `mnx-doctor` reports S2 candidates (info-level: “possible duplicate of
 `<id>` in `<other-cluster>` by alias overlap”) so the human convergence ritual has a worklist, and the

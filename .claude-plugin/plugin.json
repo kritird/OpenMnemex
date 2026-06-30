@@ -1,7 +1,7 @@
 {
   "name": "mnemex",
   "version": "0.1.0",
-  "description": "Mnemex Context Graph — a self-pruning, human-memory-modeled knowledge context graph for AI agents. Captures domain knowledge and patterns from build sessions into a file-based graph with hot/warm/cold memory tiers, lazy exponential decay, and deterministic maintenance. Skills: mnx-read, mnx-write, mnx-gc, mnx-doctor.",
+  "description": "Mnemex Context Graph — a self-pruning, human-memory-modeled knowledge context graph for AI agents. Captures domain knowledge and patterns from build sessions into a file-based graph with hot/warm/cold memory tiers, lazy exponential decay, and deterministic maintenance. Capture is cheap and local; promotion merges and consolidates deliberately. Skills: mnx-read, mnx-capture, mnx-promote, mnx-doctor, mnx-init, mnx-status (plus the internal mnx-consolidate).",
   "author": {
     "name": "Kriti",
     "url": "https://github.com/kritird"
@@ -21,6 +21,9 @@
     "spaced-repetition",
     "self-pruning",
     "claude-code",
+    "claude-code-memory",
+    "claude-memory",
+    "llm-wiki",
     "mcp"
   ]
 }

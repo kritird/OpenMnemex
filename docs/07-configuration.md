@@ -1,12 +1,17 @@
-# 07 — Configuration
+# 🎚️ 07 — Configuration
 
 All tunables live in `mnemex.config.md` at the repo root — Markdown with a YAML front-matter block, so
 it is human-readable *and* machine-parseable. The protocol reads it via `mnx_config.py`. This document
 is the schema, the defaults, and the rules around changing values.
 
+> [!TIP]
+> 🎛️ **One knob to start.** You really only set `half_life_days`. Patterns get a derived +30% half-life
+> automatically, and every other value has a sensible default. Tune the rest only once real usage tells
+> you to.
+
 ---
 
-## Schema and defaults
+## ⚙️ Schema and defaults
 
 ```yaml
 config_version: 1                 # integer; bump on any change (drives re-normalization)
@@ -49,7 +54,7 @@ purge_dead: false                 # false = tombstone-and-retain (default, audit
 
 ---
 
-## The derived-half-life rule (why one knob)
+## 🧮 The derived-half-life rule (why one knob)
 
 Domain facts and procedural patterns should not fade at the same rate — a hard-won *how* is more
 expensive to relose than a lookup *what*. But asking a user to maintain two decay rates is a burden and
@@ -66,7 +71,24 @@ without juggling two numbers.
 
 ---
 
-## Changing config safely (version + re-normalization)
+## 🛡️ Changing config safely (version + re-normalization)
+
+> [!WARNING]
+> Because decay is computed lazily against a *stored* strength, editing `half_life_days` (hence `λ`)
+> silently re-interprets every stored number. Without a guard, a batch of nodes could **flash from warm
+> to cold overnight**. The protocol guards this — never hand-edit strengths to compensate.
+
+```mermaid
+flowchart LR
+    EDIT[✏️ edit half_life_days<br/>bump config_version] --> WARN[🔔 mnx-read warns<br/><i>parameters changed</i>]
+    WARN --> NEXT[🚀 next mnx-promote]
+    NEXT --> RENORM[🧮 re-normalize<br/>score_new(now) == score_old(now)]
+    RENORM --> STAMP[🚩 stamp new version / λ] --> TIER[🎯 then tier decisions]
+    classDef warn fill:#a86a12,stroke:#fb3,color:#fff;
+    classDef safe fill:#0e7a0d,stroke:#0a5,color:#fff;
+    class EDIT,WARN warn;
+    class RENORM,STAMP,TIER safe;
+```
 
 Because decay is computed lazily against a *stored* strength, editing `half_life_days` (hence `λ`)
 silently re-interprets every stored number — without a guard, a batch of nodes could jump tiers
@@ -76,7 +98,7 @@ overnight. The protocol guards this:
 2. `.mnemex/config_version` records the version and `λ` **in force at the last compaction**.
 3. `mnx-read` compares the two and **warns** if they differ (*“parameters changed; recompaction needed
    before scores are valid”*) — it does not act.
-4. The **next `mnx-gc`** runs a one-time **re-normalization** *before* any tier decision: it recomputes
+4. The **next consolidation** (the back half of `mnx-promote`) runs a one-time **re-normalization** *before* any tier decision: it recomputes
    every node's stored strength so that each node's **live score is continuous** across the change
    (`score_new(now) == score_old(now)`), then stamps the new version/λ.
 
@@ -84,7 +106,7 @@ This makes parameter changes safe and gradual rather than abrupt and surprising.
 
 ---
 
-## Tuning guidance (start conservative, then tighten)
+## 🎯 Tuning guidance (start conservative, then tighten)
 
 None of these values are knowable up front. Recommended posture:
 

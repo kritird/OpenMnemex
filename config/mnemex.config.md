@@ -42,8 +42,9 @@ facts (the "what") by `pattern_halflife_bonus` (default +30%); you do not tune t
 
 ## When you change a value
 
-Bump `config_version`. The next `mnx-gc` will **re-normalize** stored relevance so nothing jumps tiers
-abruptly, and `mnx-read` will warn you if a change is pending. See `docs/07-configuration.md`.
+Bump `config_version`. The next consolidation (the back half of `mnx-promote`) will **re-normalize**
+stored relevance so nothing jumps tiers abruptly, and `mnx-read` will warn you if a change is pending.
+See `docs/07-configuration.md`.
 
 ## Quick guidance
 

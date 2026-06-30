@@ -1,0 +1,29 @@
+# Mnemex: truth unions, derived regenerates.
+# Drop this into a knowledge-graph repo as `.gitattributes` (mnx-init does this).
+# The `mnx-regen` driver COMMAND is registered per-clone by `mnx_regen.py install`
+# (mnx-init runs it; mnx-doctor verifies it). Without the command registered, git falls
+# back to a normal 3-way merge — so the doctor flags an unregistered driver.
+
+# --- TRUTH: append-only logs concatenate cleanly (built-in union driver) ---
+registry.md            merge=union
+**/registry.md         merge=union
+.mnemex/highwater/**   merge=union
+
+# --- DERIVED: discard both sides, regenerate from truth on conflict ---
+index.md               merge=mnx-regen
+index.[0-9][0-9][0-9].md   merge=mnx-regen
+**/index.md            merge=mnx-regen
+**/index.[0-9][0-9][0-9].md merge=mnx-regen
+phonebook.md           merge=mnx-regen
+**/phonebook.md        merge=mnx-regen
+cross-links.md         merge=mnx-regen
+**/cross-links.md      merge=mnx-regen
+# split tier files (when tier_files: true)
+warm.md                merge=mnx-regen
+cold.md                merge=mnx-regen
+dead.md                merge=mnx-regen
+cold.[0-9][0-9][0-9].md    merge=mnx-regen
+**/warm.md             merge=mnx-regen
+**/cold.md             merge=mnx-regen
+**/dead.md             merge=mnx-regen
+**/cold.[0-9][0-9][0-9].md merge=mnx-regen
