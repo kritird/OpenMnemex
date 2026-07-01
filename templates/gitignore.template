@@ -1,0 +1,10 @@
+# Mnemex knowledge-graph .gitignore
+# Ignore ONLY transient runtime state. Durable state (.mnemex/highwater/,
+# config_version, last_compaction) is intentionally committed for reproducibility.
+
+# Transient: a live/stranded team or cluster lock, and an in-flight pass plan.
+.mnemex/locks/
+.mnemex/plans/
+
+# OS
+.DS_Store

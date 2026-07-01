@@ -42,8 +42,10 @@ fits the intent.
 In the location the user will use as their graph — a **git repo** or a **local folder** (create the
 folder if it does not exist):
 - Scaffold (do not overwrite existing files): `index.md` (org router), `mnemex.config.md` (from
-  `config/mnemex.config.md` defaults), the `.mnemex/` state directory, and a first `team-<name>/`
-  skeleton with `index.md`, `registry.md`, `cross-links.md`. (This is the original scaffold contract.)
+  `config/mnemex.config.md` defaults), the `.mnemex/` state directory, a `.gitignore` (from
+  `templates/gitignore.template`, so a stranded lock/pass-plan under `.mnemex/locks/` or
+  `.mnemex/plans/` is never committed into the graph), and a first `team-<name>/` skeleton with
+  `index.md`, `registry.md`, `cross-links.md`. (This is the original scaffold contract.)
 - Explicitly tell the user that **pattern nodes persist ~30% longer than domain facts**
   (`pattern_halflife_bonus`, default +30%) and how to change it.
 - **Git remote:** have the user create the remote and push, then capture its remote URL → `graph_remote`,

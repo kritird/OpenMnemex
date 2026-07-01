@@ -117,7 +117,7 @@ def held_cluster(cluster: str) -> bool:
 
 
 def plan_path(team: str) -> str:
-    """Path to the team's pass.plan.json."""
+    """Path to the team's pass plan: <graph>/.mnemex/plans/<team>.plan.json."""
     root = mnx_common.require_graph_root(team)
     return str(mnx_common.state_dir(root) / "plans" / f"{_team_name(team)}.plan.json")
 

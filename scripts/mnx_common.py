@@ -231,6 +231,10 @@ def parse_index(path: str | Path) -> dict[str, Any]:
     for ln in text.splitlines():
         if ln.strip().startswith(">"):
             description = ln.strip().lstrip(">").strip()
+            # Strip a trailing render-annotation comment (e.g. "<!-- chunk 1: route on
+            # this -->") so a regenerated description does not re-append it each pass —
+            # otherwise the marker accumulates and index regeneration is not idempotent.
+            description = re.sub(r"\s*<!--.*?-->\s*$", "", description).strip()
             break
     sec = split_h2_sections(text)
     children = []
