@@ -33,6 +33,7 @@ It is designed to give agents long-term, navigable, *context-budget-aware* memor
 database, without an embedding pipeline, and without a server.** Routing is structural (folder +
 index traversal), decay is lazy (computed, never swept), and every mutation is a reviewable git
 commit.
+
 ---
 
 <div align="center">
