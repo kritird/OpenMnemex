@@ -33,20 +33,13 @@ It is designed to give agents long-term, navigable, *context-budget-aware* memor
 database, without an embedding pipeline, and without a server.** Routing is structural (folder +
 index traversal), decay is lazy (computed, never swept), and every mutation is a reviewable git
 commit.
-
-> [!NOTE]
-> **Status:** `v0.1.0` — specification + working plugin. The deterministic helper scripts in
-> `scripts/` are **implemented** against their published contracts (full signatures, inputs, outputs,
-> and invariants) covering binding, decay, compaction, index regeneration, locking, and the validator.
-> The repository does not include an automated test suite. See [`docs/06-script-contracts.md`](docs/06-script-contracts.md).
-
 ---
 
 <div align="center">
 
 ### 🧭 Start here
 
-**[✨ Features](FEATURES.md)** &nbsp;·&nbsp; **[🧭 User Journey](docs/12-user-journey.md)** &nbsp;·&nbsp; **[🔗 Multi-Graph & Teams](docs/13-multi-graph-and-team-routing.md)**
+**[✨ Features](FEATURES.md)** &nbsp;·&nbsp; **[0️⃣ Overview](docs/00-overview.md)** &nbsp;·&nbsp; **[🏛️ Architecture](docs/02-architecture.md)** &nbsp;·&nbsp; **[🧭 User Journey](docs/12-user-journey.md)**
 
 </div>
 
