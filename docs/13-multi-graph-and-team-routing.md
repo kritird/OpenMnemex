@@ -74,10 +74,10 @@ flowchart TD
     RC -. falls through to .-> UC --> GC["🗃️ personal graph (local folder)"]
     classDef repo fill:#14507a,stroke:#39c,color:#fff;
     classDef user fill:#0e5a5a,stroke:#3cc,color:#fff;
-    classDef graph fill:#0e7a0d,stroke:#0a5,color:#fff;
+    classDef gnode fill:#0e7a0d,stroke:#0a5,color:#fff;
     class RA,RB,RC repo;
     class UC user;
-    class GA,GB,GC graph;
+    class GA,GB,GC gnode;
 ```
 
 - **`payments-service/`** → its `.mnemex.md` binds the **payments** team graph.

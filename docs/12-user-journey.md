@@ -166,7 +166,7 @@ flowchart LR
     TIERS --> OV[👓 overlay local<br/>staged atoms]
     OV --> EXP[🔎 expand only<br/>committed node bodies]
     EXP --> ANS([💡 answer / artifact])
-    ANS --> MAN[🧾 usage manifest<br/>{id, role, why}]
+    ANS --> MAN["🧾 usage manifest<br/>{id, role, why}"]
     MAN -. 🪝 Stop hook flushes .-> REG[(📝 registry stamps)]
     classDef read fill:#4b2e83,stroke:#a98ce0,color:#fff;
     classDef out fill:#0e7a0d,stroke:#0a5,color:#fff;

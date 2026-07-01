@@ -162,7 +162,7 @@ flowchart LR
     TIERS --> OV[👓 overlay local<br/>staged atoms]
     OV --> EXP[🔎 expand only<br/>needed node bodies]
     EXP --> ANS([💡 answer])
-    ANS --> MAN[🧾 usage manifest<br/>{id, role, why}]
+    ANS --> MAN["🧾 usage manifest<br/>{id, role, why}"]
     MAN -. 🪝 flush .-> REG[(📝 registry stamps)]
     classDef read fill:#4b2e83,stroke:#a98ce0,color:#fff;
     classDef out fill:#0e7a0d,stroke:#0a5,color:#fff;
@@ -189,10 +189,10 @@ flowchart TD
     RC["📁 un-bound repo"] -. falls through .-> UC["👤 user default"] --> GC["🗃️ personal local graph"]
     classDef repo fill:#14507a,stroke:#39c,color:#fff;
     classDef user fill:#0e5a5a,stroke:#3cc,color:#fff;
-    classDef graph fill:#0e7a0d,stroke:#0a5,color:#fff;
+    classDef gnode fill:#0e7a0d,stroke:#0a5,color:#fff;
     class RA,RB,RC repo;
     class UC user;
-    class GA,GB,GC graph;
+    class GA,GB,GC gnode;
 ```
 
 - 🪝 **cwd-resolved binding** — `.mnemex.md` → env → user config; the nearest one wins.
