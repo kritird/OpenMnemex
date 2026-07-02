@@ -48,6 +48,12 @@ folder if it does not exist):
   `index.md`, `registry.md`, `cross-links.md`. (This is the original scaffold contract.)
 - Explicitly tell the user that **pattern nodes persist ~30% longer than domain facts**
   (`pattern_halflife_bonus`, default +30%) and how to change it.
+- State the **two time horizons** and ask the user to confirm or adjust them, since both are conscious
+  policy: (1) `half_life_days` (default 180) — how long an *unused* fact keeps half its relevance; and
+  (2) `freshness_ttl_days` (default 30) — how long after it was last **verified** a fact is flagged
+  **stale** so the agent re-checks it (a separate axis from decay; patterns get +30% here too). Mention
+  that individual facts can be tagged `volatility: timeless` (never stale, never auto-dies) or
+  `volatile` (short horizon). Write the chosen `freshness_ttl_days` into `mnemex.config.md`.
 - **Git remote:** have the user create the remote and push, then capture its remote URL → `graph_remote`,
   and run the **remote pre-flight** below before binding (so an auth/URL problem surfaces now, not at sync).
 - **Local folder:** capture its path → `graph_path`. If it is a git repo, writes commit locally; if it is

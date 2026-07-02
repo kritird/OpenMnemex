@@ -37,6 +37,18 @@ def lam_for(node_type: str, cfg: dict[str, Any]) -> float:
     return lam(half_life_for(node_type, cfg))
 
 
+def freshness_horizon_days(node_type: str, cfg: dict[str, Any]) -> float:
+    """Default revalidation horizon in days for a node TYPE (before per-node volatility).
+
+    Orthogonal to decay: domain → freshness_ttl_days; pattern → ·(1+freshness_pattern_bonus)
+    (a durable *how* is re-checked less often). Volatility overrides live in mnx_config.resolve_horizon.
+    See docs/14-freshness-and-revalidation.md."""
+    ttl = float(cfg.get("freshness_ttl_days", 30))
+    if node_type == "pattern":
+        return ttl * (1.0 + float(cfg.get("freshness_pattern_bonus", 0.0)))
+    return ttl
+
+
 def score(strength: float, last_update: str, now: str, lam_value: float) -> float:
     """Live relevance = strength · exp(−λ · Δt_days). Non-increasing in Δt."""
     dt_days = mnx_common.clamp_dt(last_update, now) / mnx_common.SECONDS_PER_DAY

@@ -29,8 +29,9 @@ now_utc() -> str
     # ISO-8601 UTC, second precision. The ONLY timestamp source.
 
 parse_node(path) -> Node          # {id, type, title, summary, aliases, domain, status,
-                                  #  confidence, trigger, edges[], references[], provenance, ...}
-parse_index(path) -> Index        # {description, children[], hot[], warm[], cold[]}
+                                  #  confidence, volatility, trigger, edges[], references[],
+                                  #  provenance, created, updated, verified, ...}
+parse_index(path) -> Index        # {description, children[], hot[], warm[], cold[]}  (rows carry stale_after)
 read_chunk(path, section) -> str  # ranged read of one labeled section (head|hot|warm|cold|body)
 
 slugify(title) -> str             # candidate id; caller ensures uniqueness
@@ -136,18 +137,18 @@ Generates navigation from nodes. Never the other way around.
 
 ```
 regenerate_index(cluster, materialized_state) -> writes index.md (+ index.NNN.md when chained)
-    # rebuild HOT/WARM/COLD sections; denormalize summary+aliases from nodes;
+    # rebuild HOT/WARM/COLD sections; denormalize summary+aliases+stale_after from nodes;
     # carry strength/last_update; enforce hot section ≤ hot_k;
     # CHAIN: when cold rows exceed index_chunk_rows, spill into ordered index.001.md… continuation
     #        chunks (B-tree leaf); the head records the count; stale chunks are pruned.
 index_node_ids(cluster) -> set[id]      # union of ids across the head AND continuation chunks
-denorm_check(cluster) -> list[drift]    # node.summary/aliases vs index copies (head + chain)
+denorm_check(cluster) -> list[drift]    # node.summary/aliases/stale_after vs index copies (head + chain)
 shard_index(cluster, by='domain') -> plan   # split a generated index past node_budget (no node moves);
     # action 'chain' (not 'escalate') when a single sub-key overflows — chaining is the fallback.
 ```
 
-**Invariants:** after `regenerate_index`, `index.summary==node.summary` and
-`index.aliases==node.aliases` for every node; hot section length ≤ `hot_k` (head); the union of the head
+**Invariants:** after `regenerate_index`, `index.summary==node.summary`,
+`index.aliases==node.aliases`, and `index.stale_after==resolve_horizon(node)` for every node; hot section length ≤ `hot_k` (head); the union of the head
 + continuation node-sets equals the folder's node-set; continuation files (`index.NNN.md`) are derived
 navigation, never nodes (excluded from `iter_node_files`).
 
@@ -159,13 +160,16 @@ navigation, never nodes (excluded from `iter_node_files`).
 read_highwater(cluster) -> mark
 deltas_after(cluster, mark) -> list[{id, ts, role, weight}]
 fold(materialized_state, deltas, cfg, now) -> new_materialized_state   # pure
+    # strength fold skips role in {flag, revalidated} (weight-0 freshness events never boost);
+    # a `revalidated` delta advances the node's `verified` (monotonic max), then stale_after is
+    # recomputed via mnx_config.resolve_horizon. `verified` defaults to `updated` if absent (migration).
 advance_highwater(cluster, mark)            # checkpoint; does NOT delete registry lines
 overdue(team, cfg, now) -> {due: bool, days_overdue: int, config_drift: bool}
 ```
 
 **Invariants:** `advance_highwater` only moves the mark forward and never truncates below an
 unconfirmed mark (no lost stamps); `fold` is pure and order-independent over same-id deltas applied in
-ts order.
+ts order; a `revalidated` delta moves `verified` forward only (never touches strength/tier).
 
 ---
 
@@ -273,16 +277,19 @@ that `recover` can roll back via `git checkout` to the last good commit.
 
 ```
 load(repo) -> Config                      # parse mnemex.config.md front-matter; apply defaults
-derive(cfg) -> Config                     # compute λ_domain, λ_pattern, etc.
+derive(cfg) -> Config                     # compute λ_domain, λ_pattern, freshness horizons, etc.
 version(cfg) -> int
 stamp(team, cfg)                          # write config_version + λ to .mnemex/
 changed_since_last_compaction(team, cfg) -> bool
 renormalize(scope, old_lam, new_lam, now) -> plan
     # recompute stored strengths so score_new(now)==score_old(now) for every node (continuity)
+resolve_horizon(node, cfg) -> str|None    # stale_after = verified + horizon(volatility, type, cfg);
+    # None for volatility:timeless or dead/superseded (Doc 14 §3). Pure; no clock read beyond `verified`.
 ```
 
-**Invariants:** `derive` is deterministic; `renormalize` preserves every node's *current* live score
-across a parameter change (no flash-cold); a config change is detectable before scores are trusted.
+**Invariants:** `derive`/`resolve_horizon` are deterministic; `renormalize` preserves every node's
+*current* live score across a parameter change (no flash-cold); a config change is detectable before
+scores are trusted.
 
 ---
 
@@ -291,7 +298,8 @@ across a parameter change (no flash-cold); a config change is detectable before 
 ```
 check(scope) -> Report          # list of {invariant, severity, node/edge, detail}
     # adds inv 14 (W): node body > node_body_max_chars (split into nodes + an edge; never truncate);
-    # index node-set (inv 8) and denorm (inv 9) span the chained index (head + index.NNN.md).
+    # index node-set (inv 8) and denorm (inv 9, incl. stale_after 9c) span the chained index (head + index.NNN.md);
+    # freshness (Doc 14): inv 9b verified monotonic + created≤verified/updated; 9d timeless never a death mark.
 fix(scope) -> Report            # regenerate derived files (index, reverse map, cross-links) from nodes
 check_staging() -> Report       # OPTIONAL inv 17: local staging tier — provisional ids well-formed +
                                 # unique, each id matches its content hash (untampered), provenance

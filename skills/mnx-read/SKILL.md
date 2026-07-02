@@ -67,6 +67,18 @@ Overlay rules (decision #10):
 - Routing stays correct between consolidations via the registry tail-fold (step 3) — the overlay is
   additive, not a substitute for reading the graph tiers.
 
+### 3c. Freshness check — signal stale knowledge (Doc 14)
+Freshness is a **separate axis from heat**: an atom can be `hot` yet `stale`. Each index row carries a
+precomputed **`stale_after`** column. For every atom you bring into the answer, if `stale_after` is a real
+timestamp (not `—`) and it is **in the past** (`now > stale_after`), the atom is **stale** — its content
+has not been re-confirmed within its revalidation horizon.
+- **Emit a refresh cue** in your answer for each stale atom, once per session per atom: *"⏳ `<id>` was
+  last verified <N>d ago (horizon passed <stale_after>) — I'll re-derive it from source before relying on
+  it."* Then actually re-check it against its source as part of the task.
+- A `—` in `stale_after` means the atom is **timeless** (or dead) — never cue it.
+- This is a **signal only**. Do not rewrite the node here. Acting on the outcome is step 6 (still-true) or
+  a follow-up `mnx-capture` (changed) / promote (obsolete). See the three outcomes in Doc 14 §6.
+
 ### 4. Expand only on commit
 Resolve candidate ids to paths with `mnx_resolve.resolve` (local index for intra-cluster, team
 `cross-links.md` for cross-cluster). Load **only** the node bodies you decide to use. When following
@@ -99,6 +111,19 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_stamp.py" append \
   --cluster <home-cluster-path> --id <node-id> --role <contributed|consulted> [--weight w]
 ```
 
+If you re-checked a **stale** atom (step 3c) and confirmed it is **still correct**, also append one
+`revalidated` stamp for it (weight `0`) — this advances its freshness clock at the next consolidation
+without touching heat:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_stamp.py" append \
+  --cluster <home-cluster-path> --id <node-id> --role revalidated --weight 0
+```
+
+If the fact had **changed**, do not append `revalidated` — stage the update with `/mnemex:mnx-capture`
+instead (promote will bump both `updated` and `verified`). If you could not verify it in-session, append
+nothing; it stays stale and the cue returns next session.
+
 `traversed` nodes are not stamped. The helper timestamps the stamp (`mnx_common.now_utc`) and chooses
 the durable store by graph kind:
 - **git-remote** → written to a session-durable spill *outside* the clone, so it survives the next
@@ -109,7 +134,8 @@ the durable store by graph kind:
 You never commit or push usage stamps yourself.
 
 ## Never
-- Never rewrite a node body or front-matter.
+- Never rewrite a node body or front-matter (the `revalidated` stamp is an append to the registry, not a
+  node write — advancing `verified` is consolidation's job, not the read's).
 - Never rewrite or re-tier an index.
 - Never run compaction, consolidation, or promote from a read.
 - Never body-merge or stamp a staged overlay atom; never resolve a staged-vs-graph contradiction here.

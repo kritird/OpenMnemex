@@ -105,6 +105,14 @@ def _expires(last_update: str, cfg: dict[str, Any]) -> str:
         return ""
 
 
+STALE_NULL = "—"   # rendered in the stale_after column for timeless / dead nodes (never stale)
+
+
+def _stale_after(node: dict[str, Any], cfg: dict[str, Any]) -> str:
+    """Denormalized freshness horizon for the index (Doc 14). '—' when the node never goes stale."""
+    return mnx_config.resolve_horizon(node, cfg) or STALE_NULL
+
+
 def _existing_header(cluster: str) -> tuple[str, list[str]]:
     idx_path = Path(cluster) / mnx_common.INDEX_FILENAME
     if idx_path.is_file():
@@ -137,6 +145,7 @@ def regenerate_index(cluster: str, materialized_state: Optional[dict[str, Any]] 
             "summary": str(node.get("summary", "")).replace("|", "\\|"),
             "aliases": mnx_common.aliases_to_index(node.get("aliases")).replace("|", "\\|"),
             "strength": strength, "last_update": last_update, "score": live,
+            "stale_after": _stale_after(node, cfg),
         })
     ranked.sort(key=lambda r: r["score"], reverse=True)
 
@@ -194,9 +203,7 @@ def _regenerate_split(cluster: str, name: str, description: str, children: list[
          f"<!-- regenerated: {mnx_common.now_utc()} -->", "",
          "## Children"]
     L += [f"- {ch}" for ch in children] or ["- (none — this is a leaf cluster)"]
-    L += ["", "## Hot                               <!-- always read; top-K -->",
-          "| id | type | summary | aliases | strength | last_update |",
-          "|----|------|---------|---------|----------|-------------|"]
+    L += ["", "## Hot                               <!-- always read; top-K -->", _HDR, _SEP]
     L += [_row(r, False, cfg) for r in hot]
     if any([warm, cold, dead_rows]):
         L += ["", "## Tiers                             <!-- open on demand -->"]
@@ -222,10 +229,8 @@ def _regenerate_split(cluster: str, name: str, description: str, children: list[
 
 
 def _write_tier_file(path: Path, name: str, tier: str, rows, cfg, cold: bool) -> None:
-    hdr = ("| id | type | summary | aliases | strength | last_update | expires |"
-           if cold else "| id | type | summary | aliases | strength | last_update |")
-    sep = ("|----|------|---------|---------|----------|-------------|---------|"
-           if cold else "|----|------|---------|---------|----------|-------------|")
+    hdr = _HDR_COLD if cold else _HDR
+    sep = _SEP_COLD if cold else _SEP
     L = [f"# {name} — {tier.lower()} tier", f"> {tier} nodes; route on index.md.", "",
          f"## {tier}", hdr, sep]
     L += [_row(r, cold, cfg) for r in rows]
@@ -259,10 +264,18 @@ def _write_continuations(cluster: str, name: str, chunks: list[list[dict[str, An
 
 
 def _row(r: dict[str, Any], cold: bool, cfg: dict[str, Any]) -> str:
-    base = f"| {r['id']} | {r['type']} | {r['summary']} | {r['aliases']} | {r['strength']:.2f} | {r['last_update']} |"
+    sa = r.get("stale_after") or STALE_NULL
+    base = (f"| {r['id']} | {r['type']} | {r['summary']} | {r['aliases']} | "
+            f"{r['strength']:.2f} | {r['last_update']} | {sa} |")
     if cold:
         base += f" {_expires(r['last_update'], cfg)} |"
     return base
+
+
+_HDR = "| id | type | summary | aliases | strength | last_update | stale_after |"
+_SEP = "|----|------|---------|---------|----------|-------------|-------------|"
+_HDR_COLD = "| id | type | summary | aliases | strength | last_update | stale_after | expires |"
+_SEP_COLD = "|----|------|---------|---------|----------|-------------|-------------|---------|"
 
 
 def _render(name: str, description: str, children: list[str],
@@ -276,21 +289,17 @@ def _render(name: str, description: str, children: list[str],
     L += [f"- {c}" for c in children] or ["- (none — this is a leaf cluster)"]
     L += ["",
           "## Hot                               <!-- chunk 1 tail; top-K -->",
-          "| id | type | summary | aliases | strength | last_update |",
-          "|----|------|---------|---------|----------|-------------|"]
+          _HDR, _SEP]
     L += [_row(r, False, cfg) for r in hot]
     L += ["",
           "## Warm                              <!-- chunk 2 -->",
-          "| id | type | summary | aliases | strength | last_update |",
-          "|----|------|---------|---------|----------|-------------|"]
+          _HDR, _SEP]
     L += [_row(r, False, cfg) for r in warm]
     cold_hdr = "## Cold                              <!-- chunk 3+ -->"
     if cont_count:
         cold_hdr = ("## Cold                              "
                     f"<!-- chunk 3+; continues in index.001.md … index.{cont_count:03d}.md -->")
-    L += ["", cold_hdr,
-          "| id | type | summary | aliases | strength | last_update | expires |",
-          "|----|------|---------|---------|----------|-------------|---------|"]
+    L += ["", cold_hdr, _HDR_COLD, _SEP_COLD]
     L += [_row(r, True, cfg) for r in cold]
     if cont_count:
         L += ["",
@@ -310,8 +319,7 @@ def _render_continuation(name: str, cold, cfg, n: int, total: int, nxt: Optional
          f"> Cold-tier continuation chunk ({tail}); route on the head index.md.   "
          f"<!-- chunk: cold continuation {n} -->", "",
          "## Cold                               <!-- chunk 3+ -->",
-         "| id | type | summary | aliases | strength | last_update | expires |",
-         "|----|------|---------|---------|----------|-------------|---------|"]
+         _HDR_COLD, _SEP_COLD]
     L += [_row(r, True, cfg) for r in cold]
     L += ["",
           f"<!-- GENERATED FILE. Do not hand-edit. {('Continues in ' + nxt) if nxt else 'Last chunk.'} -->",
@@ -320,7 +328,9 @@ def _render_continuation(name: str, cold, cfg, n: int, total: int, nxt: Optional
 
 
 def denorm_check(cluster: str) -> list[dict[str, Any]]:
-    """Return drift records where index.summary/aliases != node.summary/aliases (head + chain)."""
+    """Return drift records where index.summary/aliases/stale_after != the node's (head + chain)."""
+    root = mnx_common.require_graph_root(cluster)
+    cfg = mnx_config.load(str(root))
     by_id = {n["id"]: n for n in _active_nodes(cluster)}
     drift = []
     for idx_path in _index_files(cluster):
@@ -341,6 +351,14 @@ def denorm_check(cluster: str) -> list[dict[str, Any]]:
                 if mnx_common.aliases_from_index(row.get("aliases", "")) != want_aliases:
                     drift.append({"id": row["id"], "field": "aliases",
                                   "index": row.get("aliases"), "node": "; ".join(want_aliases)})
+                # Freshness denormalization (Doc 14 §9): the index's stale_after must equal the
+                # node's resolved horizon. A stale_after column is only present in newer indexes,
+                # so an absent cell is treated as not-yet-materialized, not drift.
+                if "stale_after" in row:
+                    want_stale = _stale_after(node, cfg)
+                    if (row.get("stale_after") or STALE_NULL) != want_stale:
+                        drift.append({"id": row["id"], "field": "stale_after",
+                                      "index": row.get("stale_after"), "node": want_stale})
     return drift
 
 

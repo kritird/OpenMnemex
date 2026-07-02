@@ -62,6 +62,12 @@ node) · `DROP-DUP` (duplicate — discard) · `SUPERSEDE` (new version; `supers
 edges, old → `status: superseded`) · `RESURRECT` (a cold match — revive). Honor the **node-size budget**:
 an over-budget body is split into multiple nodes + an edge, never truncated.
 
+**Freshness fields on apply (Doc 14):** any node the plan writes fresh knowledge into —
+`CREATE`/`MERGE`/`UPDATE`/`SUPERSEDE`/`RESURRECT` — gets `verified = now` (it was just re-derived under
+the human gate); a meaning change also bumps `updated`. Carry the atom's proposed **`volatility`** onto
+the node, and **surface it in the plan for the human to confirm or override** (e.g. downgrade a fast-rotting
+fact to `volatile`, or mark a definition `timeless`). Default stays `default` (type-derived horizon).
+
 **Contradictions are a hard block.** Present every contradiction to the human and resolve it in-cycle.
 If any cannot be resolved now → **abort the whole promote** (staging untouched).
 
@@ -77,7 +83,7 @@ Emit a single surgical plan covering **both** the merge and the consolidation, a
 ```
 PROMOTE PLAN  (staged: 14 atoms)
   MERGE
-  CREATE    domain  iso8583-field124   in team-payments/settlement   (from stg-d3d3…)
+  CREATE    domain  iso8583-field124   in team-payments/settlement   (from stg-d3d3…)  vol:default
   MERGE     domain  ledger-routing     ← stg-9af1…   +edge routes-through→iso8583-field124
   SUPERSEDE         old-routing-note   → iso8583-field124   (from stg-1b2c…)
   DROP-DUP  stg-77aa…  (duplicate of pat-settle-recon)

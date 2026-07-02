@@ -46,6 +46,22 @@ ATOMS_DIRNAME = "atoms"
 HELD_DIRNAME = "held"     # per-atom held-contradictions queue (W9)
 ID_PREFIX = "stg-"
 VALID_SCORES = {"now", "later"}  # 'not-needed' is silently dropped, never staged
+VALID_VOLATILITY = {"default", "timeless", "volatile"}  # + a positive int (day count); Doc 14
+
+
+def _norm_volatility(v: Any) -> Any:
+    """Normalize an LLM-proposed volatility. Invalid → 'default' (freshness never blocks a capture)."""
+    if isinstance(v, bool):
+        return "default"
+    if isinstance(v, int) and v > 0:
+        return v
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in VALID_VOLATILITY:
+            return s
+        if s.isdigit() and int(s) > 0:
+            return int(s)
+    return "default"
 
 # Budget defaults (numbers are tunable in the user config; staging is per-author/local).
 STAGING_DEFAULTS: dict[str, Any] = {
@@ -133,6 +149,7 @@ def _normalize(atom: dict[str, Any]) -> dict[str, Any]:
         "domain": _as_list(atom.get("domain")),
         "score": score,
         "urgent": bool(atom.get("urgent", False)),
+        "volatility": _norm_volatility(atom.get("volatility", "default")),
         "provenance": {
             "artifact": prov.get("artifact"),
             "reviews": _as_list(prov.get("reviews")),
@@ -160,6 +177,7 @@ def _serialize(atom: dict[str, Any], pid: str, staged_at: str) -> str:
         "domain": atom["domain"],
         "score": atom["score"],
         "urgent": atom["urgent"],
+        "volatility": atom.get("volatility", "default"),
         "provenance": atom["provenance"],
         "staged_at": staged_at,
     }
@@ -470,6 +488,7 @@ def _atom_from_argv(argv: list[str]) -> dict[str, Any]:
         "trigger": _arg(argv, "--trigger"),
         "score": _arg(argv, "--score") or "later",
         "urgent": "--urgent" in argv,
+        "volatility": _arg(argv, "--volatility") or "default",
         "body": _arg(argv, "--body") or "",
         "provenance": {
             "artifact": _arg(argv, "--artifact"),

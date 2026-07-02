@@ -50,11 +50,14 @@ if pass.plan.json exists AND tree dirty:  # crash recovery (Doc 02 §10)
 if config_version/λ changed since .mnemex/config_version:
     RE-NORMALIZE: recompute every node's stored strength so that
         score_new(now) == score_old(now)   (continuity across the parameter change)
+    if freshness_ttl_days / freshness_pattern_bonus changed:
+        recompute stale_after for every node from its verified + the new horizon   # Doc 14 §8
     stamp new config_version/λ
 ```
 
 Re-normalization runs **before** any tier decision, so the pass never mixes old-λ strengths with
-new-λ decay.
+new-λ decay. The freshness horizon recompute rides the same guard, so an edited `freshness_ttl_days`
+re-flags staleness gradually at the next pass rather than reinterpreting the index in place.
 
 ---
 
@@ -71,9 +74,15 @@ for each cluster C in SNAPSHOT:
     deltas = registry(C).lines_after( HWM[C] )
     for each node X in C:
         s = materialized_strength(X) · exp(−λ(type(X)) · (now − last_update(X)))   # decay to now
-        for d in deltas where d.id == X.id and d.role != 'flag':
+        for d in deltas where d.id == X.id and d.role not in {'flag','revalidated'}:
             s = min(STRENGTH_MAX, decay(s, d.ts→now) + boost(d.role) · recall_bonus(X, s))
         score[X] = s
+
+        # 1b. Freshness (independent of strength; Doc 14): fold revalidation events, recompute horizon
+        verified[X] = X.verified or X.updated                 # migration backfill if absent
+        for d in deltas where d.id == X.id and d.role == 'revalidated':
+            verified[X] = max(verified[X], d.ts)              # monotonic; weight 0 — never touches strength
+        stale_after[X] = resolve_horizon(X, verified[X])      # null for volatility:timeless / dead
 
 # 2. Structural strength (deterministic counterweight)
 REVERSE = build_reverse_map(SNAPSHOT)        # who points AT X: intra-cluster + cross-links
@@ -88,6 +97,8 @@ for each node X:
 
 # 4. Death candidates (CONJUNCTION gate + edge safety)
 for each node X in cold tier:
+    if volatility(X) == 'timeless':
+        continue                                              # PINNED: timeless never auto-dies (Doc 14 §7)
     if score[X] low AND struct[X] weak AND (now > expires[X]):
         if X is the SOLE referrer of any still-active node D:
             demote-reluctant: keep X warm (its structural role to D protects it)   # no orphan cascade
@@ -131,7 +142,7 @@ for each decision in pass.plan.json:        # 1. truth-level mutations first
         # never leave an edge pointing at a tombstoned/removed node
 
 # 2. derived navigation, rebuilt from the now-final nodes
-regenerate affected index.md sections (HOT/WARM/COLD), denormalizing summary+aliases
+regenerate affected index.md sections (HOT/WARM/COLD), denormalizing summary+aliases+stale_after
 delta-update team/cross-links.md from changed boundary edges
 
 # 3. telemetry checkpoints
@@ -157,6 +168,7 @@ succeeded and validated) or it does not (recover from the plan on next run).
 | Re-normalize before tiering | Nodes flash-cold when half-life is edited (retroactive drift). |
 | Mark is read-only; struct measured once | Order-dependent, non-deterministic tier outcomes. |
 | Sole-referrer reluctance in mark | Orphan cascade — killing a node that is some live node's only inbound. |
+| Timeless exemption in mark | Auto-death of a foundational fact that decayed in heat but is permanently true (Doc 14). |
 | Truth mutations before derived rebuild | Index/cross-links rebuilt from stale node state. |
 | Sever edges transactionally, cold included | Dangling edges to tombstoned nodes; cold nodes missed by a partial reverse map. |
 | HWM advance, not truncate | Lost stamps from a read racing the compaction window. |

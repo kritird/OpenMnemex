@@ -10,6 +10,8 @@
   <img alt="storage" src="https://img.shields.io/badge/storage-Markdown%20%2B%20git-181717?logo=git&logoColor=white">
   <img alt="routing" src="https://img.shields.io/badge/routing-structural-4b2e83">
   <img alt="decay" src="https://img.shields.io/badge/decay-lazy%20%C2%B7%20Ebbinghaus-0e7a0d">
+  <img alt="freshness" src="https://img.shields.io/badge/freshness-revalidate%20on%20read-0e5a5a">
+  <img alt="token cost" src="https://img.shields.io/badge/reads-token--frugal-0e7a0d">
   <img alt="reviewable" src="https://img.shields.io/badge/every%20write-a%20git%20commit-14507a">
 </p>
 
@@ -34,6 +36,7 @@ mindmap
       📉 Ebbinghaus lazy decay
       🔁 Spaced-repetition boost
       🛡️ Structural-strength protection
+      ⏳ Freshness / revalidate-on-read
     ✍️ Write path
       📥 Capture = git commit
       🚀 Promote = git push / PR
@@ -126,7 +129,48 @@ stateDiagram-v2
 
 ---
 
-## ✍️ 3 — Writing split like `git`: capture then promote
+## ⏳ 3 — Freshness: being *hot* doesn't make it *true*
+
+Reinforcement makes a fact **loud**, never **correct** — so a frequently-read fact can quietly go out of date
+while the graph vouches for it harder every time. Mnemex adds a **second axis, orthogonal to heat**: every atom
+has a `verified` clock, and when it hasn't been re-confirmed within its horizon it is flagged **stale** on read —
+even if it's hot — so the agent re-checks it against the source before relying on it.
+
+```mermaid
+flowchart LR
+    subgraph AX["two independent axes"]
+      direction TB
+      H["🔥 Heat — should I surface it?<br/><i>driven by use</i>"]
+      F["⏳ Freshness — should I trust it?<br/><i>driven by verification</i>"]
+    end
+    R([🔍 read a hot atom]) --> CK{now &gt; stale_after?}
+    CK -->|no| USE[✅ use it]
+    CK -->|yes| CUE[🔔 refresh cue:<br/>re-derive from source]
+    CUE --> OUT{outcome}
+    OUT -->|still true| STAMP[📝 revalidated stamp<br/>advances verified · heat untouched]
+    OUT -->|changed| CAP[📥 capture → promote<br/>bumps updated + verified]
+    OUT -->|obsolete| SUP[🪦 supersede]
+    classDef ax fill:#0e5a5a,stroke:#3cc,color:#fff;
+    classDef q fill:#7a4a0d,stroke:#d90,color:#fff;
+    classDef good fill:#0e7a0d,stroke:#0a5,color:#fff;
+    class H,F ax;
+    class CK,OUT q;
+    class USE,STAMP,CAP,SUP good;
+```
+
+- ⏳ **`fresh` / `stale`** — a validity label separate from `hot`/`warm`/`cold`; heat can never mask staleness.
+- 🔔 **Revalidate-on-read** — the cue fires *only* when a stale atom is actually surfaced (no background sweeps).
+- 💸 **Cheap when unchanged** — "still true" is one weight-0 `revalidated` stamp; no re-promote round-trip.
+- 🎚️ **One knob, layered** — set `freshness_ttl_days` once; patterns get a longer horizon automatically; tag the
+  rare outlier `volatility: volatile` (URLs, versions, prices) or `timeless`.
+- 🗿 **`timeless` never dies** — an eternal definition is exempt from staleness **and** from auto-tombstoning; it
+  can leave only by an explicit human supersede.
+
+> 📖 The full model: [`docs/14-freshness-and-revalidation.md`](docs/14-freshness-and-revalidation.md)
+
+---
+
+## ✍️ 4 — Writing split like `git`: capture then promote
 
 The write path is deliberately two halves — the **`git commit`** and the **`git push`/PR** of memory.
 
@@ -150,7 +194,7 @@ flowchart LR
 
 ---
 
-## 🔍 4 — Reading without context bloat
+## 🔍 5 — Reading without context bloat
 
 `mnx-read` is *context-budget-aware*: it routes structurally and reads in chunks, expanding only the nodes
 it actually needs.
@@ -176,9 +220,14 @@ flowchart LR
 - 🧾 **Usage manifest** — every loaded node gets `{id, role, why}`; no defensible *why* ⇒ unstamped.
 - 🪝 **Pure w.r.t. knowledge** — the only write is an append-only usage stamp.
 
+> 🪙 **Token-frugal by construction.** *Tier is read cost:* a read spends a few small index-head reads
+> **plus only the node bodies it commits to** — never the whole corpus, never a wall of retrieved chunks.
+> Because the hot routing head is capacity-bounded and the graph self-prunes, that cost stays small as the
+> graph grows into the thousands of nodes — exactly where context-stuffing and vector-RAG get most expensive.
+
 ---
 
-## 🔗 5 — Built for many graphs, teams & orgs
+## 🔗 6 — Built for many graphs, teams & orgs
 
 One author, many repos, a personal graph, and a team inside an org — all resolved without manual switching.
 
@@ -205,7 +254,7 @@ flowchart TD
 
 ---
 
-## 🤖 6 — Automation that keeps the good habits for you
+## 🤖 7 — Automation that keeps the good habits for you
 
 The hooks make sync, stamping, capture nudges, and the commit gate happen **without you remembering them** —
 and every hook is *safe*: it syncs, warns, prompts, or gates, but never mutates knowledge on its own.

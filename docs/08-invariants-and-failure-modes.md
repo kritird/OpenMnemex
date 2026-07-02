@@ -27,7 +27,8 @@ documented limits, not defects.
 
 ### 📋 Schema
 6. **(E) Front-matter valid.** `id` valid slug; `type ∈ {domain,pattern}`; `status` valid; `pattern`
-   nodes have a non-null `trigger`; timestamps are UTC ISO-8601.
+   nodes have a non-null `trigger`; `volatility ∈ {default, timeless, volatile}` or a positive integer;
+   timestamps are UTC ISO-8601.
 7. **(E) Id stability.** A node's `id` matches its historical id (ids never change); detect a changed id
    as corruption.
 
@@ -37,6 +38,15 @@ documented limits, not defects.
    for every node. *(This is the invariant that justifies storing `summary`/`aliases` copies in the
    index for match-without-body-load.)*
 10. **(W) Materialized state present.** Every active node has `strength`/`last_update` in the index.
+
+### ⏳ Freshness (Doc 14)
+9b. **(E) `verified` monotonic + ordered.** A node's `verified` never regresses across revisions, and
+    `created ≤ verified` and `created ≤ updated`.
+9c. **(E) `stale_after` denormalization.** For every active node, `index.stale_after ==
+    resolve_horizon(node)` — the same denormalization guarantee as invariant 9. It is null iff
+    `volatility: timeless` **or** `status ∈ {dead, superseded}`.
+9d. **(E) Timeless never auto-tombstoned.** No consolidation pass marks a `volatility: timeless` node as a
+    death candidate; a timeless node reaches `dead` only via an explicit human SUPERSEDE/archive.
 
 ### 🌡️ Tier / budget
 11. **(E) Hot bound.** Each cluster's `hot` section length ≤ `hot_k`.
@@ -93,6 +103,8 @@ Each entry: the break, its mitigation, and the doc that owns the fix.
 | F14 | **Usage starvation** — model under-reports the manifest ⇒ used nodes decay and wrongly go cold (silent knowledge loss). | **Mandatory disposition on every body-load**; structural strength as deterministic ballast. | Doc 01 §6, §9 |
 | F15 | **Pattern sprawl** — the same “how” authored three ways. | **`trigger` field**; match patterns on trigger, merge near-dupes at the plan gate. | Doc 01 §2 |
 | F16 | **Plugin-state contamination** — a process writes state (config, markers, locks, staging) into the plugin's own directory/git ⇒ state lost on reinstall/upgrade, dirty tree in the plugin checkout, breaks on a read-only install. | **State isolation**: graph root resolved explicitly (never cwd, never plugin path); all state in the graph repo, `~/.claude/mnemex/`, or the project's `.mnemex.md`; the plugin dir is read-only. | Doc 02 §12 |
+| F17 | **Stale-but-trusted (truth decay)** — a frequently-read fact stays hot forever while its content silently goes out of date; heat *masks* staleness, so the model confidently serves outdated knowledge. | **Freshness axis**: a separate `verified` clock + precomputed `stale_after`; `mnx-read` emits a **refresh cue** on any stale atom (independent of heat); re-confirmation advances `verified` via a weight-0 `revalidated` stamp. | Doc 14, Doc 04 |
+| F18 | **Foundational-fact death** — an eternal truth (definition/invariant) decays in heat from disuse and gets tombstoned by the cold-TTL gate. | **`volatility: timeless`** pins the node against automatic death (exempt from the conjunction gate); it can leave only by explicit SUPERSEDE. | Doc 14 §7, Doc 05 |
 
 ### 🌫️ Soft (documented limits, not defects)
 

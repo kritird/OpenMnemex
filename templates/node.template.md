@@ -7,6 +7,7 @@ aliases: [other name, abbreviation, synonym]
 domain: [sub-domain]                  # may be a LIST (a node can belong to >1 sub-index)
 status: active                        # active | superseded | archived | dead
 confidence: high                      # high | medium | low
+volatility: default                   # default | timeless | volatile | <int days> — freshness horizon (Doc 14)
 trigger: null                         # REQUIRED (non-null) for type: pattern; null for domain
 edges:                                # OUTGOING edge instances owned by THIS node
   - { to: other-node-id, type: routes-through }
@@ -17,6 +18,7 @@ provenance:
   session: 1970-01-01T00:00:00Z
 created: 1970-01-01T00:00:00Z
 updated: 1970-01-01T00:00:00Z         # meaning-change time (NOT usage)
+verified: 1970-01-01T00:00:00Z       # last confirmed-still-true time (NOT usage, NOT meaning-change)
 ---
 
 ## Summary

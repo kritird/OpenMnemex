@@ -19,6 +19,7 @@ import mnx_config
 import mnx_decay
 
 FLAG_ROLE = "flag"
+REVALIDATED_ROLE = "revalidated"   # freshness event (weight 0): advances `verified`, NEVER strength (Doc 14)
 MAINT_SENTINEL = "__maintenance-due__"
 
 
@@ -77,11 +78,14 @@ def fold(materialized_state: dict[str, Any], deltas: list[dict[str, Any]],
     """Pure: fold deltas (in ts order) onto materialized strengths → new state.
 
     materialized_state: {id: {strength, last_update, type}}. Order-independent over
-    same-id deltas applied in ts order. The `flag`/maintenance sentinel rows are ignored.
+    same-id deltas applied in ts order. The `flag`/maintenance sentinel rows are ignored, and so
+    are `revalidated` (freshness) events — they carry weight 0 and must never touch strength or
+    last_update; they advance the node's `verified` instead (see latest_revalidations, applied to
+    node truth by the consolidate pass — Doc 14).
     """
     state = {k: dict(v) for k, v in materialized_state.items()}
     for d in sorted(deltas, key=lambda r: r["ts"]):
-        if d.get("role") == FLAG_ROLE or d.get("id") == MAINT_SENTINEL:
+        if d.get("role") in (FLAG_ROLE, REVALIDATED_ROLE) or d.get("id") == MAINT_SENTINEL:
             continue
         nid = d["id"]
         cur = state.get(nid, {"strength": 0.0, "last_update": d["ts"], "type": "domain"})
@@ -94,6 +98,25 @@ def fold(materialized_state: dict[str, Any], deltas: list[dict[str, Any]],
         cur["type"] = ntype
         state[nid] = cur
     return state
+
+
+def latest_revalidations(deltas: list[dict[str, Any]]) -> dict[str, str]:
+    """Latest `revalidated` timestamp per node id among the given deltas (Doc 14).
+
+    The consolidate pass uses this to advance each node's `verified` (a node truth-write): set
+    node.verified = max(node.verified, latest_revalidations[id]). Monotonic; strength untouched.
+    Pure — reads nothing but the deltas it is given.
+    """
+    out: dict[str, str] = {}
+    for d in deltas:
+        if d.get("role") != REVALIDATED_ROLE:
+            continue
+        nid, ts = d.get("id"), d.get("ts")
+        if not nid or not ts:
+            continue
+        if nid not in out or _safe_after(ts, mnx_common.parse_ts(out[nid])):
+            out[nid] = ts
+    return out
 
 
 def advance_highwater(cluster: str, mark: str) -> None:
@@ -244,6 +267,11 @@ def _main(argv: list[str]) -> int:
             mark = read_highwater(argv[2])
             return mnx_common.emit({"cluster": argv[2], "mark": mark,
                                     "deltas": deltas_after(argv[2], mark)})
+        if cmd == "revalidations":
+            # ids with a fresh `revalidated` stamp since the HWM → {id: latest_ts} for the pass
+            mark = read_highwater(argv[2])
+            return mnx_common.emit({"cluster": argv[2], "mark": mark,
+                                    "revalidations": latest_revalidations(deltas_after(argv[2], mark))})
         if cmd == "retier":
             return mnx_common.emit(retier(argv[2]))
         if cmd == "rotate":

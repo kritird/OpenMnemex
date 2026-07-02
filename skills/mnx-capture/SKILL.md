@@ -52,7 +52,11 @@ Decompose the artifact + transcript into candidate atoms. For each, decide:
   because…"* — with a trigger describing the situation it governs.
 
 Draft `summary` (one line), `aliases` (other names the concept goes by), `domain` (routing key(s)),
-and a tight body. **Node-size budget (completeness-of-atom, not brevity):** keep each atom's body
+and a tight body. **Propose a `volatility`** (freshness horizon, Doc 14) from the atom's content shape —
+`volatile` for a fact that rots fast (a URL, version, price, on-call name), `timeless` for a durable
+definition/invariant (also exempts it from ever auto-dying), or leave it `default` (the type-derived
+horizon) for everything else. It is a *suggestion*: the human confirms or overrides it at the promote
+gate, so bias toward `default` when unsure. **Node-size budget (completeness-of-atom, not brevity):** keep each atom's body
 under the soft cap (`node_body_max_chars`, default ~6000). If a unit is genuinely bigger, **split it
 into multiple atoms and capture an edge between them** (good hygiene) — never truncate to fit. Cap the
 number of atoms per session to what the session actually produced; do not pad.
@@ -79,7 +83,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_stage.py" add --json <<'JSON'
   "aliases": ["settle-recon"],
   "domain": ["settlement"],
   "trigger": "reviewing or curating a settlement spec",
-  "score": "now", "urgent": true,
+  "score": "now", "urgent": true, "volatility": "default",
   "provenance": { "artifact": "tap-vic-settlement-spec", "reviews": ["r3","r7"],
                   "rejected": ["post-then-reconcile (causes orphaned legs)"],
                   "rationale": "human correction in review r7" },

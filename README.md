@@ -16,6 +16,7 @@
   <img alt="claude code" src="https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2">
   <img alt="storage" src="https://img.shields.io/badge/storage-Markdown%20%2B%20git-181717?logo=git&logoColor=white">
   <img alt="vectors" src="https://img.shields.io/badge/vectors-none-critical">
+  <img alt="token cost" src="https://img.shields.io/badge/reads-token--frugal-0e7a0d">
 </p>
 
 > 🧠 Self-curating, navigable, context-budget-aware **agent memory** that judges your session for
@@ -100,11 +101,47 @@ keep / defer / forget judgment. The author doesn't curate, tag, or decide what t
 salience call is Mnemex's job, and what survives later rises or decays on its own through the
 🔥 hot / 🌤️ warm / ❄️ cold tiers as it gets used or stops being used.
 
-The author doesn't worry about any of this. You build; Mnemex remembers what mattered. 🧭
+And just like your own memory, being *frequently recalled* is not the same as being *still true*. Mnemex
+tracks that too, on a **separate axis**: every fact carries a `verified` clock, and when it hasn't been
+re-confirmed within a horizon you set (`freshness_ttl_days`), it's flagged ⏳ **stale** the next time it's
+read — even if it's hot — so the agent re-checks it against the source instead of confidently repeating
+something outdated. Confirm it's unchanged and the clock resets for one cheap stamp; find it's wrong and
+the correction flows back in through capture. (Full model:
+[`docs/14-freshness-and-revalidation.md`](docs/14-freshness-and-revalidation.md).)
+
+The author doesn't worry about any of this. You build; Mnemex remembers what mattered — and flags what may
+have gone stale. 🧭
 
 > The judgment is reviewable, not a black box: capture stages locally and you can inspect or
 > un-stage anything (`mnx-status`, `mnx-capture --drop`) before a deliberate `mnx-promote` commits
 > it to the shared graph. *Automatic, but never unaccountable.*
+
+---
+
+## 🪙 Built to burn fewer tokens
+
+A knowledge base is only worth having if *reading* it is cheap. The two usual approaches quietly tax
+every single query: stuffing prior knowledge into the prompt pays for the whole pile on every turn, and
+vector-RAG pastes the top-*k* retrieved chunks into context each time you ask. Both get **more** expensive
+as the corpus grows.
+
+Mnemex is architected the other way: **tier is literally read cost**, so the tokens a read spends scale
+with the *path you take*, not the *size of the graph*. You navigate by reading tiny index heads and open
+only the handful of node bodies you actually commit to.
+
+| 🎯 Mechanism | 🪙 Why it spends fewer tokens |
+|---|---|
+| 🧭 **Route, don't retrieve** | You read one-line index heads to *pick a path* (org → team → cluster). Nothing is pasted into context on spec. |
+| 🔥 **Hot = top-K, chunk 1** | The routing head is capacity-bounded — it stays small even in a huge graph, so the baseline read is bounded regardless of node count. |
+| 📚 **Chunked tier reads, stop early** | Read **Hot** first; it's usually enough. **Warm/Cold** only on demand. You rarely load a whole index, never the whole graph. |
+| 🏷️ **Match on denormalized summaries** | Each index row carries the node's `summary`+`aliases`, so you *match without opening a single node body*. |
+| 🔎 **Expand only on commit** | Load only the bodies you'll actually use, within a per-hop token budget — beam search, not "load every neighbor". |
+| 🗑️ **Self-pruning** | Decay + death keep the routing surface small over time — no landfill of dead knowledge to page through. |
+| ⏳ **Trust the fresh, re-check only the stale** | A verified fact is used as-is; you don't re-derive known knowledge from scratch — only a *stale* atom triggers a re-check. |
+
+> 💡 **The payoff:** a read is a few small index-head reads **plus only the node bodies you commit to** —
+> not the corpus, not a wall of retrieved chunks. Retrieval stays cheap as the graph grows into the
+> thousands of nodes, which is exactly where naive context-stuffing and RAG get most expensive.
 
 ---
 
@@ -160,7 +197,7 @@ Three kinds of file, three jobs (this separation is the core of the design):
 
 | File | Holds | Mutated when |
 |---|---|---|
-| 📄 **Node** (`*.md`) | Pure knowledge: summary, body, edges, provenance. | Only on author / re-author / supersede / death. |
+| 📄 **Node** (`*.md`) | Pure knowledge: summary, body, edges, provenance. | Only on author / re-author / supersede / death / revalidation (`verified`). |
 | 🗂️ **Index** (`index.md`) | Derived navigation + materialized memory state (strength, tier). | Only by the maintenance pass (and write-apply). |
 | 📝 **Registry** (`registry.md`) | Append-only usage stamps. | Appended on confirmed use; truncated only by checkpointed compaction. |
 
@@ -174,7 +211,7 @@ Knowledge writing is split **capture / promote** — the `git commit` vs `git pu
 
 | 🎛️ Command | Skill | What it does | Mutates? |
 |---|---|---|---|
-| 🔍 `/mnemex:mnx-read` | `mnx-read` | Route → read tiered indexes in chunks → **overlay** local staged atoms → expand only needed nodes → emit a **usage manifest** → append stamps for nodes actually used. | Registry append only (pure w.r.t. knowledge). |
+| 🔍 `/mnemex:mnx-read` | `mnx-read` | Route → read tiered indexes in chunks → **overlay** local staged atoms → expand only needed nodes → **flag stale atoms** for revalidation → emit a **usage manifest** → append stamps for nodes actually used. | Registry append only (pure w.r.t. knowledge). |
 | ✍️ `/mnemex:mnx-capture` | `mnx-capture` | Capture the **current session** (artifact + human review points) → extract atoms → **score** each `now/later/not-needed` → **stage** locally with self-sufficient provenance. Cheap, local, no lock. Also **curates** staging: `--drop <id>` / `--discard-all` un-stage (review via `mnx-status`) — the local un-stage and the hard-cap escape valve. | No — writes only the local staging tier. |
 | 🚀 `/mnemex:mnx-promote` | `mnx-promote` | The deliberate merge: flush stamps → **reconcile + merge** staged atoms (clean-context sub-agent, HITL on contradictions) → **consolidate** the post-merge graph (decay/re-tier/death/edge-hygiene/budget) → doctor → push → clear staging. If a push fails after commit, `--retry-push` lands the existing commit (never re-merges). | Yes — gated, atomic, one commit. |
 | 🩺 `/mnemex:mnx-doctor` | `mnx-doctor` | The validator: checks every invariant (edge targets exist, index matches nodes, denormalized copies are fresh, reverse map consistent, no dangling edges) and can self-heal derived files. | Repair mode only. |
@@ -257,6 +294,7 @@ is expanded on first use and collected in the appendix.
 | 1️⃣1️⃣ | [`11-staging-and-promotion.md`](docs/11-staging-and-promotion.md) | The **capture / promote** split: staging tier, atom schema, budgets, read overlay, atomic promote. |
 | 1️⃣2️⃣ | [`12-user-journey.md`](docs/12-user-journey.md) | 🧭 End-to-end journey: install → bind → daily read/capture/promote, with auto-hook touchpoints. |
 | 1️⃣3️⃣ | [`13-multi-graph-and-team-routing.md`](docs/13-multi-graph-and-team-routing.md) | 🔗 Working across many graphs, teams & orgs: which-graph vs which-team, per-graph staging, worked example. |
+| 1️⃣4️⃣ | [`14-freshness-and-revalidation.md`](docs/14-freshness-and-revalidation.md) | ⏳ The **freshness** axis: `verified` clock, `stale_after`, read-time refresh cue, `volatility`, timeless-never-dies. |
 
 See also: [`FEATURES.md`](FEATURES.md) (feature showcase).
 

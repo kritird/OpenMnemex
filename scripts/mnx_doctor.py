@@ -22,6 +22,27 @@ import mnx_resolve
 
 VALID_TYPES = {"domain", "pattern"}
 VALID_STATUS = {"active", "superseded", "archived", "dead"}
+VALID_VOLATILITY = {"default", "timeless", "volatile"}
+
+
+def _valid_volatility(v: Any) -> bool:
+    """default | timeless | volatile | a positive integer (day count)."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, int):
+        return v > 0
+    if isinstance(v, str):
+        s = v.strip().lower()
+        return s in VALID_VOLATILITY or (s.isdigit() and int(s) > 0)
+    return False
+
+
+def _le(a: Any, b: Any) -> bool:
+    """a <= b as timestamps; tolerant (unparseable → not a violation)."""
+    try:
+        return mnx_common.parse_ts(str(a)) <= mnx_common.parse_ts(str(b))
+    except Exception:
+        return True
 
 
 def _all_nodes(scope: str) -> dict[str, dict[str, Any]]:
@@ -100,9 +121,20 @@ def check(scope: str) -> dict[str, Any]:
             add(6, "E", nid, f"invalid status: {node.get('status')!r}")
         if node.get("type") == "pattern" and not node.get("trigger"):
             add(6, "E", nid, "pattern node missing required non-null trigger")
-        for ts_field in ("created", "updated"):
+        for ts_field in ("created", "updated", "verified"):
             if ts_field in node and not mnx_common.is_iso_utc(str(node[ts_field])):
                 add(6, "E", nid, f"{ts_field} is not UTC ISO-8601: {node[ts_field]!r}")
+        # Freshness schema (Doc 14): volatility vocabulary + verified ordering + timeless permanence.
+        if "volatility" in node and not _valid_volatility(node.get("volatility")):
+            add(6, "E", nid, f"invalid volatility: {node.get('volatility')!r} "
+                             "(default | timeless | volatile | positive int)")
+        created, verified = node.get("created"), node.get("verified")
+        if created and verified and not _le(created, verified):
+            add("9b", "E", nid, f"verified {verified!r} precedes created {created!r}")
+        if str(node.get("volatility", "default")).strip().lower() == "timeless" \
+                and node.get("status") == "dead" and not node.get("superseded-by"):
+            add("9d", "E", nid, "timeless node is dead without supersession "
+                                "(timeless must never be auto-tombstoned — Doc 14 §7)")
         stem = Path(node["_path"]).stem
         if stem != nid:
             add(7, "E", nid, f"id does not match filename stem {stem!r} (ids never change)")

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,9 @@ DEFAULTS: dict[str, Any] = {
     "cold_ttl_days": 120,
     "cold_recall_multiplier": 1.6,
     "strength_max": 1.0,
+    "freshness_ttl_days": 30,       # revalidation horizon: a fact goes STALE this long after `verified`
+    "freshness_pattern_bonus": 0.30,  # patterns get a longer horizon (derived, orthogonal to decay)
+    "freshness_volatile_factor": 0.15,  # volatility:volatile → freshness_ttl_days · this
     "struct_scale": 2.0,           # liveness-weighted in-degree scale for structural strength (W6)
     "boost": {"contributed": 1.0, "consulted": 0.5, "traversed": 0.0},
     "node_budget": 35,
@@ -57,12 +61,59 @@ def load(repo: str) -> dict[str, Any]:
 
 
 def derive(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Compute λ_domain, λ_pattern, and the derived pattern half-life."""
+    """Compute λ_domain, λ_pattern, the derived pattern half-life, and freshness horizons."""
     out = dict(cfg)
     out["half_life_pattern"] = mnx_decay.half_life_for("pattern", cfg)
     out["lam_domain"] = mnx_decay.lam_for("domain", cfg)
     out["lam_pattern"] = mnx_decay.lam_for("pattern", cfg)
+    out["freshness_horizon_domain"] = mnx_decay.freshness_horizon_days("domain", cfg)
+    out["freshness_horizon_pattern"] = mnx_decay.freshness_horizon_days("pattern", cfg)
     return out
+
+
+def horizon_days(node: dict[str, Any], cfg: dict[str, Any]) -> float | None:
+    """Resolve a node's freshness horizon in DAYS. None ⇒ never stale (timeless).
+
+    Precedence (Doc 14 §4): per-node `volatility` override → type-derived default.
+    """
+    vol = node.get("volatility", "default")
+    if isinstance(vol, str):
+        vol = vol.strip().lower()
+    if vol == "timeless":
+        return None
+    if vol == "volatile":
+        return float(cfg.get("freshness_ttl_days", 30)) * float(cfg.get("freshness_volatile_factor", 0.15))
+    # explicit integer day-count override (int, or a digit string)
+    if isinstance(vol, bool):
+        pass
+    elif isinstance(vol, (int, float)):
+        return float(vol)
+    elif isinstance(vol, str) and vol.isdigit():
+        return float(vol)
+    # default → derive from type
+    return mnx_decay.freshness_horizon_days(node.get("type", "domain"), cfg)
+
+
+def resolve_horizon(node: dict[str, Any], cfg: dict[str, Any]) -> str | None:
+    """Precomputed `stale_after` = verified + horizon, as an ISO-8601 UTC string.
+
+    None ⇒ never stale: `volatility: timeless`, a dead/superseded node, or an unusable
+    `verified` timestamp. `verified` falls back to `updated`→`created` for legacy/migration
+    nodes. Pure; the only clock read is the node's own `verified`. See docs/14.
+    """
+    if str(node.get("status", "active")) in ("dead", "superseded"):
+        return None
+    days = horizon_days(node, cfg)
+    if days is None:
+        return None
+    verified = node.get("verified") or node.get("updated") or node.get("created")
+    if not verified:
+        return None
+    try:
+        dt = mnx_common.parse_ts(verified) + timedelta(days=float(days))
+        return dt.strftime(mnx_common.ISO_FMT)
+    except Exception:
+        return None
 
 
 def version(cfg: dict[str, Any]) -> int:
@@ -169,6 +220,14 @@ def _main(argv: list[str]) -> int:
         if cmd == "stamp":
             stamp(argv[2], load(argv[2]))
             return mnx_common.emit({"action": "stamped", "stamp": read_stamp(argv[2])})
+        if cmd == "horizon":
+            # horizon <node_path>  → the node's stale_after (freshness) resolution
+            node = mnx_common.parse_node(argv[2])
+            cfg = load(argv[2])
+            return mnx_common.emit({"id": node.get("id"), "volatility": node.get("volatility", "default"),
+                                    "verified": node.get("verified"),
+                                    "horizon_days": horizon_days(node, cfg),
+                                    "stale_after": resolve_horizon(node, cfg)})
         return mnx_common.emit({"error": f"unknown subcommand: {cmd}"}, ok=False)
     except Exception as exc:
         return mnx_common.emit({"error": str(exc)}, ok=False)

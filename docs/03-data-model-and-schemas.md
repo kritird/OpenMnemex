@@ -76,6 +76,7 @@ aliases: [field 124, DE124, data element 124, stablecoin routing field]
 domain: [settlement]            # may be a LIST: a node can belong to >1 sub-index (routing DAG)
 status: active                  # active | superseded | archived | dead
 confidence: high                # high | medium | low
+volatility: default             # default | timeless | volatile | <int days> — freshness horizon (Doc 14)
 trigger: null                   # REQUIRED for type: pattern; null for domain (see below)
 edges:                          # OUTGOING edge instances, owned by this node
   - { to: ledger-routing,    type: routes-through }
@@ -89,6 +90,7 @@ provenance:
   session: 2026-06-01T09:12:00Z
 created: 2026-06-01T09:12:00Z
 updated: 2026-06-01T09:12:00Z   # meaning-change timestamp (NOT usage)
+verified: 2026-06-01T09:12:00Z  # last confirmed-still-true timestamp (NOT usage, NOT meaning-change). Doc 14
 ---
 
 ## Summary
@@ -103,6 +105,15 @@ updated: 2026-06-01T09:12:00Z   # meaning-change timestamp (NOT usage)
 ## Provenance
 <why this node exists; traceable to the artifact and the specific human reviews>
 ```
+
+### Freshness fields (`verified`, `volatility`)
+
+`verified` is a **third truth clock**, distinct from `updated`: `updated` moves when the *meaning* changes;
+`verified` moves when the atom is *confirmed still true*. Re-confirming an unchanged atom bumps `verified`
+only — never `updated`, never strength. `volatility` selects the atom's revalidation horizon
+(`default` → derived from type; `timeless` → never stale **and never auto-dies**; `volatile` / `<int days>`
+→ short/explicit). The horizon is materialized into the index as `stale_after` (§3). Full model:
+[`14-freshness-and-revalidation.md`](14-freshness-and-revalidation.md).
 
 ### Pattern nodes
 
@@ -141,23 +152,28 @@ memory state**.
 - (none — this is a leaf cluster)
 
 ## Hot                               <!-- chunk 1 tail: top-K by live score; ALWAYS small -->
-| id | type | summary | aliases | strength | last_update |
-|----|------|---------|---------|----------|-------------|
-| iso8583-field124 | domain | ISO 8583 Field 124 — stablecoin routing… | field 124; DE124 | 0.94 | 2026-06-20T… |
+| id | type | summary | aliases | strength | last_update | stale_after |
+|----|------|---------|---------|----------|-------------|-------------|
+| iso8583-field124 | domain | ISO 8583 Field 124 — stablecoin routing… | field 124; DE124 | 0.94 | 2026-06-20T… | 2026-07-01T… |
 
 ## Warm                              <!-- chunk 2: read only if routed here -->
-| id | type | summary | aliases | strength | last_update |
-| ledger-routing | domain | Ledger routing topology for… | ledger routing | 0.55 | 2026-05-30T… |
+| id | type | summary | aliases | strength | last_update | stale_after |
+| ledger-routing | domain | Ledger routing topology for… | ledger routing | 0.55 | 2026-05-30T… | 2026-06-29T… |
 
 ## Cold                              <!-- chunk 3+: deep search / edge-reached only -->
-| id | type | summary | aliases | strength | last_update | expires |
-| legacy-de124-fmt | domain | Pre-2024 Field 124 layout… | old de124 | 0.08 | 2026-02-01T… | 2026-08-01T… |
+| id | type | summary | aliases | strength | last_update | stale_after | expires |
+| legacy-de124-fmt | domain | Pre-2024 Field 124 layout… | old de124 | 0.08 | 2026-02-01T… | — | 2026-08-01T… |
 ```
 
 Notes:
 - `summary` and `aliases` are **denormalized copies** of the node's values — the validator enforces
   `index.summary == node.summary` and `index.aliases == node.aliases`.
 - `strength`/`last_update` are the materialized decay state (Doc 02).
+- `stale_after` is the **precomputed freshness horizon** (Doc 14): read flags an atom `stale` when
+  `now > stale_after`. It is denormalized from the node like `summary`/`aliases` (validator-enforced), is
+  `—`/null for `timeless` and dead/superseded nodes, and is recomputed by consolidation. It is independent
+  of `expires` (the Cold-tier death time) — a node can be stale long before it is near death, or fresh yet
+  cold.
 - Hot = top-K (`hot_k`); the line count of the Hot section is therefore bounded.
 - **Chained index.** When the Cold tier outgrows `index_chunk_rows`, the head keeps Hot + Warm + the
   first cold chunk and a `## Continuations` list, and the overflow spills into ordered continuation
@@ -176,12 +192,15 @@ Append-only. The write buffer / WAL. One event per line. Human-readable but trea
 iso8583-field124    2026-06-20T14:03:00Z    contributed    1.0
 ledger-routing      2026-06-20T14:03:01Z    consulted      0.5
 iso8583-field124    2026-06-25T09:00:00Z    contributed    1.0
+iso8583-field124    2026-06-28T11:00:00Z    revalidated    0.0
 __maintenance-due__ 2026-06-27T08:00:00Z    flag           0
 ```
 
 Columns: `id`, `ts` (UTC ISO-8601), `role`, `weight`. The `__maintenance-due__` sentinel is the
-read-skill's overdue flag (Doc 02 §7). Compaction replays lines **after** the cluster's high-water
-mark and advances the mark; it does not delete (Doc 02 §2).
+read-skill's overdue flag (Doc 02 §7). The `revalidated` role (weight `0`) is a **freshness** event, not a
+usage boost: read appends it when the model re-confirms a stale atom is still true; consolidation consumes it
+to advance the node's `verified` and does **not** fold it into strength (Doc 14). Compaction replays lines
+**after** the cluster's high-water mark and advances the mark; it does not delete (Doc 02 §2).
 
 ---
 
@@ -251,6 +270,7 @@ aliases: [field 124, DE124]
 domain: [settlement]               # routing key(s)
 score: now                         # now | later  ('not-needed' is dropped, never staged)
 urgent: true                       # sharpens the nag; never inline-pushes
+volatility: default                # LLM-PROPOSED from content shape; human overrides at the promote gate (Doc 14)
 trigger: "reviewing a settlement spec"   # REQUIRED for type: pattern
 provenance:                        # self-sufficient to reconcile COLD (transcript gone by promote)
   artifact: tap-vic-settlement-spec

@@ -29,6 +29,13 @@ cold_ttl_days: 120               # grace in cold before a node becomes a death c
 cold_recall_multiplier: 1.6       # spaced-repetition over-reward: reviving a COLD node boosts harder
 strength_max: 1.0                 # saturation cap (prevents immortal nodes)
 
+# --- Freshness (revalidation horizon; Doc 14) ---
+freshness_ttl_days: 30            # a domain fact goes STALE this long after it was last VERIFIED.
+                                  #   Asked at mnx-init like half_life_days. Independent of decay/tiers.
+freshness_pattern_bonus: 0.30    # patterns are more durable → longer horizon (derived, like the half-life bonus)
+                                  #   H_fresh_pattern = freshness_ttl_days·(1+bonus). You set one number.
+                                  #   Per-node `volatility` overrides this: timeless | volatile | <int days>.
+
 # --- Usage boosts (the stamp weights) ---
 boost:
   contributed: 1.0                # materially shaped the artifact
@@ -71,6 +78,26 @@ without juggling two numbers.
 
 ---
 
+## ⏳ The freshness horizon (a second, orthogonal clock)
+
+Heat (decay/tiers) decides whether to **surface** a fact; freshness decides whether to still **trust** it.
+They are independent — a `hot` fact can be `stale`. You set **one** freshness number and three layers resolve
+the per-atom horizon (`stale_after = verified + horizon`), in precedence order:
+
+```
+volatility: timeless      → never stale (and never auto-dies — Doc 14 §7)
+volatility: volatile      → freshness_ttl_days · 0.15         (URLs, versions, prices, on-call names)
+volatility: <int days>    → exactly that many days
+volatility: default →  pattern:  freshness_ttl_days · (1 + freshness_pattern_bonus)
+                       domain:   freshness_ttl_days
+```
+
+~99% of atoms carry no `volatility` and inherit the type-derived default (layer B). `mnx-capture` **proposes**
+a `volatility` from the atom's content shape and the human confirms/overrides at the promote gate — the author
+never has to remember to annotate. At `mnx-init` the tool states the default explicitly, exactly as it does for
+the half-life: *"Facts go stale after 30 days unless you tag them; patterns get +30%."* Full model:
+[`14-freshness-and-revalidation.md`](14-freshness-and-revalidation.md).
+
 ## 🛡️ Changing config safely (version + re-normalization)
 
 > [!WARNING]
@@ -100,7 +127,10 @@ overnight. The protocol guards this:
    before scores are valid”*) — it does not act.
 4. The **next consolidation** (the back half of `mnx-promote`) runs a one-time **re-normalization** *before* any tier decision: it recomputes
    every node's stored strength so that each node's **live score is continuous** across the change
-   (`score_new(now) == score_old(now)`), then stamps the new version/λ.
+   (`score_new(now) == score_old(now)`), then stamps the new version/λ. The same pass recomputes every
+   node's `stale_after` if `freshness_ttl_days`/`freshness_pattern_bonus` changed — so a freshness-horizon
+   edit, like a half-life edit, takes effect gradually at the next consolidation rather than reinterpreting
+   the index in place (Doc 14 §8).
 
 This makes parameter changes safe and gradual rather than abrupt and surprising.
 
@@ -120,6 +150,10 @@ None of these values are knowable up front. Recommended posture:
   is most likely to catch a duplicate or trigger a resurrection.
 - **Keep `purge_dead: false`** for any enterprise/audit context; git history makes true deletion
   semi-meaningless anyway, and tombstones preserve supersession lineage.
+- **Set `freshness_ttl_days` to how long your facts stay true**, not how long you keep them — it is about
+  *validity*, not retention. Start at 30; shorten if your domain moves fast. Tag the two outliers a single
+  number handles worst: `volatility: timeless` for definitions/invariants (also exempts them from death),
+  `volatility: volatile` for anything that rots fast (endpoints, versions, prices).
 
 Every parameter is also collected in the reference table in
 [`09-appendix-glossary-acronyms.md`](09-appendix-glossary-acronyms.md).

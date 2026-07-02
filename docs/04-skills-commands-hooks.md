@@ -59,13 +59,23 @@ flowchart TD
 5. **Emit usage manifest.** At the end, output `{id, role, why}` for every node whose **body was
    loaded**. Rule: no defensible one-line *why* ⇒ `traversed` (unstamped). Body-load ⇒ a disposition
    is mandatory.
-6. **Stamp.** Append `{id, ts, weight}` to **the home cluster's registry** for each `contributed` /
-   `consulted` node (a cross-cluster use stamps the *foreign* cluster's registry). Append-only; no
+5b. **Freshness check + refresh cue.** For every atom in play, read its `stale_after` from the index row
+   (no body load). If `stale_after` is non-null and `now > stale_after`, mark the atom **`stale`** in the
+   returned context and attach a **refresh cue** — *"⏳ last verified Nd ago (horizon Md); re-derive from
+   source and confirm before relying on this."* Cue each atom **at most once per session** (per-session
+   marker, same mechanism as the Stop hook). This is a *signal*, not a mutation — see Doc 14 §5. If, during
+   the task, the model re-derives the fact and finds it **still correct**, it appends a `revalidated` stamp
+   in step 6; if it **changed**, it stages an update via `mnx-capture`; if it **cannot verify** in-session,
+   it does nothing (the atom stays stale, the cue returns next session).
+6. **Stamp.** Append `{id, ts, role, weight}` to **the home cluster's registry** for each `contributed` /
+   `consulted` node (a cross-cluster use stamps the *foreign* cluster's registry), **and** a
+   `revalidated` line (weight `0`) for each stale atom the model re-confirmed as still true. Append-only; no
    lock.
 
 > [!CAUTION]
 > **Never:** rewrite a node, rewrite an index, or compact. The only write `mnx-read` performs is the
-> registry append.
+> registry append — including the `revalidated` freshness stamp, which is an append like any other, so read
+> stays pure w.r.t. knowledge (consolidation, not read, advances `verified`).
 
 ---
 
@@ -82,7 +92,10 @@ graph** — no reconcile, no lock, no push. Full model: [`11-staging-and-promoti
    `hard` budget ⇒ stop (backpressure: run promote); `soft` ⇒ warn.
 2. **Extract.** Decompose artifact + transcript into candidate atoms; tag `domain` or `pattern`; mine
    review corrections/rejected alternatives into patterns with a `trigger`. Honor the node-size budget
-   (split oversized atoms + an edge; never truncate).
+   (split oversized atoms + an edge; never truncate). **Propose `volatility`** from the atom's content shape
+   — a body that is a URL / version / price / on-call name ⇒ `volatile`; a definition / invariant ⇒
+   `timeless`; else `default`. This is a *suggestion* the human confirms or overrides at the promote gate
+   (Doc 14 §4).
 3. **Score** each atom `now | later | not-needed` — intrinsic importance, **not** novelty. `now` ⇒ stage
    `--urgent`; `later` ⇒ stage; `not-needed` ⇒ **silent drop**.
 4. **Stage** (the only write). `mnx_stage.py add` writes each kept atom with **self-sufficient
@@ -104,8 +117,10 @@ any contradiction is a **hard HITL block** (resolve in-cycle or abort). The orde
    parallel, apply serially). Each atom → CREATE / MERGE / DROP-DUP / SUPERSEDE / RESURRECT.
 3. **Consolidate** the post-merge graph by invoking the internal **`mnx-consolidate`** skill (§3a),
    folded into the **same** approval plan.
-4. **Plan** (the human gate) — one combined plan covering the merge **and** the consolidation.
-   `--dry-run` stops here; any unresolved contradiction ⇒ abort.
+4. **Plan** (the human gate) — one combined plan covering the merge **and** the consolidation. The plan
+   surfaces each atom's **proposed `volatility`** for the human to confirm or override. CREATE / MERGE /
+   RESURRECT atoms get `verified = now` (they were just re-derived under the gate). `--dry-run` stops here;
+   any unresolved contradiction ⇒ abort.
 5. **Apply** serially under the lock; run `mnx-doctor` (must pass); **persist** (commit + push by kind);
    **clear staging** only on a confirmed persist (abort leaves staging untouched).
 
@@ -165,7 +180,10 @@ It detects current state (`mnx_binding.py resolve`) and branches over two indepe
 
 On *create* it scaffolds the graph (org `index.md`, `mnemex.config.md` from `config/mnemex.config.md`
 defaults, `.mnemex/` state, a first `team-<name>/` skeleton) and writes the binding pointing at it; on
-first contact with a graph that has no `mnemex.config.md` it writes one from defaults. It never writes
+first contact with a graph that has no `mnemex.config.md` it writes one from defaults. At create it states
+the two time-horizon defaults for the user — *"unused facts halve in relevance every `half_life_days` (180);
+facts go **stale** and get re-checked after `freshness_ttl_days` (30) — patterns get +30% on both"* — so both
+clocks are a conscious choice, not a silent default (Doc 07, Doc 14). It never writes
 graph-behavior parameters into a binding (those live only in the graph's `mnemex.config.md`), never
 overwrites an existing binding without confirmation, and never clones by hand — `sync` does that. Full
 spec: [`10-binding-and-graph-sync.md`](10-binding-and-graph-sync.md).

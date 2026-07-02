@@ -27,11 +27,14 @@ created and severed.
 **Edge type / vocabulary** — the controlled set of predicates (`routes-through`, `governs`, …); lives
 in the write skill, not in graph data; essentially never deleted.
 
+**Freshness** — the validity axis, orthogonal to heat: `fresh` vs `stale`, driven by the `verified`
+clock rather than by access. A `hot` fact can be `stale`. See *revalidation*, *truth decay* (Doc 14).
+
 **Hot tier** — the top-K most-relevant nodes per cluster, listed in the index's chunk-1; zero extra
 read hops.
 
 **Index** — a generated `index.md` per folder; routing head + the materialized memory state
-(strength/last_update/tier) for the folder's nodes.
+(strength/last_update/tier + `stale_after`) for the folder's nodes.
 
 **Memory tier** — `hot | warm | cold | dead`; a **logical** label in the index (not a physical
 location), corresponding to read-cost.
@@ -47,6 +50,13 @@ produced it.
 **Registry** — an append-only per-cluster usage log; the write buffer (memtable/WAL) for relevance.
 
 **Resurrection** — promoting a cold node back up on use, with an over-sized boost (spaced repetition).
+
+**Revalidation** — re-confirming a stale atom against its source on read: unchanged ⇒ a weight-0
+`revalidated` stamp advances `verified`; changed ⇒ capture→promote; obsolete ⇒ supersede. Read-triggered
+only — no proactive refresh sweep (Doc 14).
+
+**`stale_after`** — the precomputed freshness horizon (`verified + resolved horizon`) denormalized onto
+each index row; read flags an atom `stale` when `now > stale_after`; null for `timeless`/dead nodes.
 
 **Reverse-edge map** — “who points at X”, built from node edges + cross-links; includes cold and dead
 nodes; the basis of structural strength and safe severing.
@@ -65,8 +75,18 @@ deterministic counterweight to usage decay that protects hubs.
 **Tombstone** — a dead node whose body is cleared but whose id/front-matter is retained for audit
 (default death mode; hard delete is opt-in).
 
+**Truth decay** — the failure freshness guards against: a fact staying hot (and thus trusted) long after
+its content stopped being true. Distinct from *decay*, which is about relevance, not validity.
+
 **Usage manifest** — the read skill's end-of-task `{id, role, why}` list; the gate that defines what
 counts as “used”.
+
+**`verified`** — a node's third truth clock: when it was last confirmed *still true* (distinct from
+`updated` = when its meaning last *changed*). Monotonic; drives freshness.
+
+**`volatility`** — a node's optional freshness override: `timeless` (never stale, never auto-dies),
+`volatile` (short horizon), or an explicit day count; unset ⇒ derived from type. LLM-proposed at capture,
+human-confirmed at promote.
 
 ---
 
@@ -106,6 +126,8 @@ counts as “used”.
 | `warm_band` | 0.25 | Score floor for warm. | Warm/cold boundary. |
 | `cold_ttl_days` | 120 | Grace in cold before death. | Forgetting horizon. |
 | `cold_recall_multiplier` | 1.6 | Over-reward for reviving a cold node. | Spaced-repetition durability. |
+| `freshness_ttl_days` | 30 | Days after `verified` before a fact is `stale`. | F17 stale-but-trusted (revalidation). |
+| `freshness_pattern_bonus` | 0.30 | Patterns get a `·(1+bonus)` longer freshness horizon (derived). | Durable *how* revalidated less often. |
 | `strength_max` | 1.0 | Saturation cap. | F3 immortal nodes. |
 | `boost.contributed` | 1.0 | Strong stamp weight. | Usage signal. |
 | `boost.consulted` | 0.5 | Medium stamp weight. | Usage signal. |

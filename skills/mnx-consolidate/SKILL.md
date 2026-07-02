@@ -38,9 +38,15 @@ Mutate nothing. Build the decision set against a frozen snapshot.
    `references` contribute nothing.
 3. **Retention + target tier:** `retention[X] = combine(score, struct)`; `target_tier[X]` with hot =
    top-K (`hot_k`) by score (`mnx_decay.tier_of`).
+3b. **Freshness (independent of heat; Doc 14):** per cluster, gather the revalidation events in the
+   registry tail — `mnx_compact.latest_revalidations(deltas)` → `{id: latest_ts}`. These are weight-0
+   `revalidated` stamps; they never entered `score[X]` (the fold ignores them). Plan to advance each
+   node's `verified` to that ts in Phase B.
 4. **Death candidates (conjunction gate):** a cold node dies only if score is low **and** struct is
    weak **and** TTL expired. **Sole-referrer reluctance:** if it is the only inbound of any still-active
-   node, keep it warm (no orphan cascade).
+   node, keep it warm (no orphan cascade). **Timeless exemption:** a node with `volatility: timeless` is
+   **never** a death candidate — it decayed in heat but is permanently true, so it may sit in cold yet
+   must never be auto-tombstoned (it can leave only by an explicit human SUPERSEDE). Doc 14 §7.
 5. **Budget:** if a cluster exceeds `node_budget`, plan to sweep cold out of the active index; split the
    index along the `domain:` sub-key (`mnx_index.shard_index`); if a single sub-key still overflows,
    **chain the index** into `index.NNN.md` continuation chunks (B-tree-leaf style; `regenerate_index`
@@ -53,9 +59,13 @@ Apply the plan, truth-first then derived:
    keep id + front-matter; hard-delete if `--purge`). **Transactionally sever** every incident edge
    using the reverse map + cross-links (cold included) — rewrite each referrer to drop the edge or
    repoint to `superseded-by`. Never leave an edge pointing at a dead node.
+1b. **Advance `verified`** for each node in the revalidation plan (step A.3b): set the node's front-matter
+   `verified = max(current verified, revalidation ts)` — a monotonic node truth-write. Leave `updated` and
+   the index strength **untouched** (a confirmation is not a meaning-change and not a use). Backfill a
+   missing `verified` from `updated` while here.
 2. Regenerate affected `index.md` sections from the now-final nodes with `mnx_index.regenerate_index`
-   (denormalizing summary/aliases; chains the cold tier when over `index_chunk_rows`);
-   delta-update `cross-links.md`.
+   (denormalizing summary/aliases **and** the freshness `stale_after` column, recomputed from each node's
+   `verified`+`volatility`; chains the cold tier when over `index_chunk_rows`); delta-update `cross-links.md`.
 3. Advance high-water marks (`mnx_compact.advance_highwater` — checkpoint, never truncate); stamp
    `.mnemex/last_compaction` and `config_version`/λ.
 4. **Hand back to promote.** Consolidate's tier/death/budget decisions are folded into promote's single
@@ -69,6 +79,7 @@ Apply the plan, truth-first then derived:
 ## Never
 - Never decide against freshly-mutated state — snapshot first.
 - Never delete on age alone — require the conjunction (low usage AND structurally weak).
+- Never auto-tombstone a `volatility: timeless` node; never let a `revalidated` stamp touch strength/tier.
 - Never sever an edge non-transactionally or skip cold/dead nodes in the reverse map.
 - Never truncate the registry — only advance the high-water mark.
 - Never auto-invent folder structure on a budget overflow — split by sub-key, then chain; escalate last.
