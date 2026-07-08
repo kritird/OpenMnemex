@@ -4,10 +4,12 @@ See docs/invariants-and-failure-modes.md (Part A) for the full invariant list.
 
 check() is read-only. fix() only ever rebuilds DERIVED artifacts (index, cross-links)
 from the nodes — nodes are truth and are never auto-edited by the doctor. fix() is
-idempotent (running twice yields no further change).
+idempotent (running twice yields no further change). regen-crosslinks() is the targeted
+cross-links-only writer (a subset of fix) for callers that just wrote boundary edges.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,11 @@ VALID_TYPES = {"domain", "pattern"}
 # node KEEPS its body (audit + resurrection). (Formerly also superseded/archived — collapsed.)
 VALID_STATUS = {"active", "dead"}
 VALID_VOLATILITY = {"default", "timeless", "volatile"}
+
+
+def _norm_name(s: str) -> str:
+    """Normalize a link/mention name for comparison — matches parse_wikilinks' dedup key."""
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
 def _valid_volatility(v: Any) -> bool:
@@ -246,6 +253,20 @@ def check(scope: str) -> dict[str, Any]:
                     add(21, "W", node.get("id"),
                         f"resolved mention [[{m.get('name')}]]→{m['resolved_id']} not mirrored in edges "
                         "(run mnx-doctor --fix / re-run link reconciliation)")
+            # Mirror ⊆ body (22, Link Reconciliation §8): edges/mentions are a GENERATED mirror of the
+            # body's [[wiki-links]], so every entry must trace back to a link still present in the body.
+            # An entry with no matching [[link]] is a PHANTOM left by an edit that removed/renamed the
+            # link — silent graph corruption (inflated in-degree, undead edges). Re-run reconciliation.
+            body_names = {_norm_name(w["name"])
+                          for w in mnx_common.parse_wikilinks(node.get("_body") or "")}
+            for m in node.get("mentions") or []:
+                if not isinstance(m, dict):
+                    continue
+                mname = _norm_name(str(m.get("name") or ""))
+                if mname and mname not in body_names:
+                    add(22, "W", node.get("id"),
+                        f"phantom mention [[{m.get('name')}]] not in body [[wiki-links]] "
+                        "(link was removed/renamed; re-run link reconciliation to prune)")
 
     # Org directory (20): every team with nodes appears in the org index.
     org = mnx_common.parse_md_table((root / mnx_common.INDEX_FILENAME).read_text(encoding="utf-8")
@@ -272,6 +293,26 @@ def check(scope: str) -> dict[str, Any]:
     return {"ok": counts["E"] == 0, "counts": counts, "findings": findings}
 
 
+def regen_crosslinks(scope: str) -> list[dict[str, Any]]:
+    """Regenerate every team's `cross-links.md` under `scope` from node truth. Idempotent.
+
+    The ONLY targeted cross-links writer besides the full `fix`/merge-driver — a promote (or any
+    caller that just wrote boundary edges) can satisfy the inv-4 gate without a whole-graph `fix`.
+    Reuses `_boundary_rows` — the SAME derivation `check()` gates on — so a subsequent `check` can
+    never disagree with what this wrote. Returns per-team actions."""
+    root = mnx_common.require_graph_root(scope)
+    actions: list[dict[str, Any]] = []
+    rows_by_team = _boundary_rows(scope)
+    for team, rows in rows_by_team.items():
+        _write_crosslinks(root / team, team, rows)
+        actions.append({"regenerated_crosslinks": team, "rows": len(rows)})
+    # teams with no boundary edges still get an empty (truthful) cross-links file
+    for team_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name.startswith("team-")):
+        if team_dir.name not in rows_by_team:
+            _write_crosslinks(team_dir, team_dir.name, [])
+    return actions
+
+
 def fix(scope: str) -> dict[str, Any]:
     """Regenerate DERIVED files (indexes, cross-links) from the nodes. Idempotent."""
     root = mnx_common.require_graph_root(scope)
@@ -279,13 +320,7 @@ def fix(scope: str) -> dict[str, Any]:
     for cluster in mnx_common.iter_clusters(scope):
         mnx_index.regenerate_index(str(cluster))
         actions.append({"regenerated_index": str(cluster)})
-    for team, rows in _boundary_rows(scope).items():
-        _write_crosslinks(root / team, team, rows)
-        actions.append({"regenerated_crosslinks": team, "rows": len(rows)})
-    # teams with no boundary edges still get an empty (truthful) cross-links file
-    for team_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name.startswith("team-")):
-        if team_dir.name not in _boundary_rows(scope):
-            _write_crosslinks(team_dir, team_dir.name, [])
+    actions.extend(regen_crosslinks(scope))
     # Regenerate the W2 phonebook per team + the org directory (also derived from truth).
     for team_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name.startswith("team-")):
         if mnx_phonebook.entries(str(team_dir)):
@@ -375,6 +410,8 @@ def _main(argv: list[str]) -> int:
             return mnx_common.emit(rep, ok=rep["ok"])
         if cmd == "fix":
             return mnx_common.emit(fix(scope))
+        if cmd == "regen-crosslinks":
+            return mnx_common.emit({"action": "regen-crosslinks", "actions": regen_crosslinks(scope)})
         if cmd == "check-staging":
             rep = check_staging()
             return mnx_common.emit(rep, ok=rep["ok"])

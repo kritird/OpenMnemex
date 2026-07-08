@@ -110,13 +110,58 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
 
+def _supersede_map(team: str) -> dict[str, str]:
+    """norm(old id or alias) → final LIVE successor id, for every superseded (dead) node in the team.
+
+    A SUPERSEDE retires the old node (status dead + superseded-by=<new>) but leaves referrer bodies
+    still saying `[[old-name]]`. The old id is absent from the active phonebook, so a naive resolve
+    returns null and the mesh drops the edge to a red-link (F8). This map lets resolve FORWARD a
+    superseded name to its replacement instead. Supersede chains (v1→v2→v3) are collapsed to the final
+    live successor; a chain that dead-ends at a still-dead node forwards to that terminal id (resolve
+    then declines it, since it is not in the active rows — the doctor's inv-2 backstop still applies).
+    """
+    root = _team_root(team)
+    direct: dict[str, str] = {}          # norm(old_id) → immediate successor id
+    alias_to_old: dict[str, str] = {}    # norm(alias)  → old_id (dead node's own aliases)
+    for cluster in mnx_common.iter_clusters(root):
+        for nf in mnx_common.iter_node_files(cluster):
+            try:
+                node = mnx_common.parse_node(nf)
+            except Exception:
+                continue
+            nid = node.get("id")
+            succ = node.get("superseded-by")
+            if node.get("status") != DEAD or not (nid and succ):
+                continue
+            direct[_norm(nid)] = str(succ)
+            aliases = node.get("aliases")
+            if isinstance(aliases, str):
+                aliases = mnx_common.aliases_from_index(aliases)
+            for a in (aliases or []):
+                alias_to_old.setdefault(_norm(str(a)), nid)
+    out: dict[str, str] = {}
+    for old_norm, succ in direct.items():
+        seen = {old_norm}
+        cur = succ
+        while _norm(cur) in direct and _norm(cur) not in seen:
+            seen.add(_norm(cur))
+            cur = direct[_norm(cur)]
+        out[old_norm] = cur
+    for a_norm, old_id in alias_to_old.items():
+        if _norm(old_id) in out:
+            out.setdefault(a_norm, out[_norm(old_id)])
+    return out
+
+
 def resolve(name: str, team: str) -> dict[str, Any]:
     """Resolve a name/alias mention to a node id against the team phonebook.
 
     Deterministic, exact-first: (1) exact id; (2) exact alias; (3) exact summary-normalized;
-    (4) substring/alias-token overlap as ranked candidates. Returns
-    {resolved: id|None, cluster_path, match, candidates:[…]}. Fuzzy/semantic near-misses are
-    NOT this script's job — that is mnx_simindex (W8), consulted only when this returns no exact.
+    (4) superseded-by forwarding (a dead node's id/alias → its live successor); (5) substring/
+    alias-token overlap as ranked candidates. Returns {resolved: id|None, cluster_path, match,
+    candidates:[…]}; a superseded forward is marked match="superseded-by" + forwarded_from=<old>.
+    Fuzzy/semantic near-misses are NOT this script's job — that is mnx_simindex (W8), consulted only
+    when this returns no exact.
     """
     rows = _read_phonebook(team)
     q = _norm(name)
@@ -137,6 +182,16 @@ def resolve(name: str, team: str) -> dict[str, Any]:
         if overlap:
             candidates.append({"id": r["id"], "cluster_path": r["cluster_path"],
                                "tier": r["tier"], "overlap": overlap})
+    # No exact ACTIVE match. Forward a superseded (dead) name to its live successor so the mesh
+    # repoints the edge instead of dropping it to a red-link (F8).
+    fwd = _supersede_map(team)
+    succ = fwd.get(qid) or (fwd.get(q) if q else None)
+    if succ:
+        for r in rows:
+            if r["id"] == succ:  # successor must be active (present in the phonebook)
+                hit = _hit(r, "superseded-by", rows)
+                hit["forwarded_from"] = qid or name
+                return hit
     candidates.sort(key=lambda c: (-c["overlap"], c["tier"] != "hot", c["id"]))
     return {"resolved": None, "match": None, "name": name,
             "candidates": candidates[:5],

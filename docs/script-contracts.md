@@ -2,13 +2,14 @@
 
 > [!NOTE]
 > 🧠 **Skills reason; scripts decide.** Anything that must be exact — decay math, id→path resolution,
-> index regeneration, invariant checks, locking — lives in a deterministic script, never in skill prose.
+> **node persistence** (minting the id, stamping the clock, front-matter shape — `mnx_node`), index
+> regeneration, invariant checks, locking — lives in a deterministic script, never in skill prose.
 > Every script emits `STATUS=OK|FAIL` + JSON so a skill can parse the result.
 
 The skills reason; these scripts decide deterministically. Anything that must be exact lives here, not
 in skill prose. **This document specifies the contracts — signatures, inputs, outputs, invariants. The
 scripts in `scripts/` are implemented against these contracts as of `v0.1.0`** (`mnx_common`,
-`mnx_config`, `mnx_decay`, `mnx_resolve`, `mnx_compact`, `mnx_stamp`, `mnx_stage`, `mnx_index`,
+`mnx_config`, `mnx_decay`, `mnx_resolve`, `mnx_compact`, `mnx_stamp`, `mnx_stage`, `mnx_node`, `mnx_index`,
 `mnx_lock`, `mnx_doctor`, `mnx_status`, and the `mnx_binding` entry point the session hook and every
 skill depend on to locate the graph). All scripts
 are Python 3.9+, standard library + `PyYAML` only, runnable as
@@ -154,6 +155,39 @@ shard_index(cluster, by='domain') -> plan   # split a generated index past node_
 `index.aliases==node.aliases`, and `index.stale_after==resolve_horizon(node)` for every node; hot section length ≤ `hot_k` (head); the union of the head
 + continuation node-sets equals the folder's node-set; continuation files (`index.NNN.md`) are derived
 navigation, never nodes (excluded from `iter_node_files`).
+
+---
+
+## 🪧 `mnx_node.py` — the deterministic node writer (truth-writes)
+
+Persists node truth for promote (CREATE/MERGE/SUPERSEDE/RESURRECT) and consolidate (tombstone,
+`verified`-advance). The reconcile *judgment* (which disposition, which node, what body) stays in the
+skill/sub-agent; this script executes an **already-decided** disposition as a mechanical, invariant-
+preserving write — the missing peer to `mnx_stage` (staged atoms), `mnx_mesh` (edges), `mnx_index`
+(indexes). Called under the team lock (the skill holds it; the writer does not take the lock itself).
+
+```
+create(cluster, fields) -> {id, path, action:"created"}
+    # mint a UNIQUE slug from fields.title (slugify + numeric suffix if taken graph-wide);
+    # status=active; created=updated=verified=now_utc(); trigger REQUIRED iff type==pattern;
+    # reject a provisional stg- id; write in the node.template front-matter shape.
+merge(id, cluster, changes, meaning_change=False) -> {id, path, action:"merged"}
+    # edit in place: keep id + created; apply changed fields/body; verified=now_utc();
+    # updated=now_utc() ONLY when meaning_change (a use/confirm is not a meaning change).
+supersede(old_id, cluster, new_fields) -> {new_id, old_id, action:"superseded"}
+    # create() the replacement, then retire old: status=dead, superseded-by=new_id, died=now, body kept.
+    # (Referrer repoint stays with the caller via mnx_mesh/mnx_resolve — this writer sets only the two nodes.)
+resurrect(id, cluster) -> {id, path, action:"resurrected"}   # dead->active; verified=now; clear died + superseded-by
+tombstone(id, cluster) -> {id, path, action:"tombstoned"}    # status=dead, died=now, KEEP body; refuses a timeless node
+revalidate(id, cluster, ts) -> {id, path, verified, no_op}   # verified=max(current,ts), monotonic; backfills missing verified from updated
+```
+
+**Invariants:** timestamps come only from `now_utc()` (`revalidate` accepts an external confirmation ts
+but never regresses `verified`); ids come only from `slugify` + a uniqueness suffix; a `stg-` provisional
+id is rejected; `merge`/`tombstone`/`revalidate` preserve the body verbatim; a dead node keeps its body
+(never hollowed); `verified` is monotonic and never precedes `created`; a `timeless` node is never
+tombstoned (only superseded). These make the doctor's freshness invariants **9b** (created ≤ verified)
+and **9d** (timeless never auto-tombstoned) hold **by construction**.
 
 ---
 

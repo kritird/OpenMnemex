@@ -81,7 +81,7 @@ flowchart TD
 
 ## 2️⃣ `mnx-capture` — stage the session locally (cheap, no mutation)
 
-**Command:** `/mnemex:mnx-capture [--urgent-only]`
+**Command:** `/mnemex:mnx-capture [--drop <id> | --discard-all]`
 
 Runs **in the same session** that built the artifact, so it can read the artifact *and* the human
 review/clarification points from context (those are where the *how* lives and exist only in the

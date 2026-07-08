@@ -1,6 +1,6 @@
 ---
 description: Capture this session's durable knowledge (artifact + human review points) into the local Mnemex staging tier — extract atoms, score each now/later/not-needed, and stage them with self-sufficient provenance. Fast and local; it does NOT merge into the shared graph (that is /mnemex:mnx-promote). Also curates staging — review, drop one, or discard all un-promoted captures.
-argument-hint: "[--urgent-only | --drop <id> | --discard-all]"
+argument-hint: "[--drop <id> | --discard-all]"
 ---
 
 Use the **mnx-capture** skill to stage the knowledge produced in THIS session — cheaply and locally.
@@ -20,7 +20,8 @@ Otherwise (capture mode): run the **preflight** (`mnx_binding.py status` → res
 drain staging **or** make room by discarding with `/mnemex:mnx-capture --drop <id>` / `--discard-all`; if
 `soft`, warn). Then: **Extract** the artifact +
 transcript into atoms (tag domain vs pattern; turn review corrections into patterns with a `trigger`;
-honor the node-size budget — split oversized atoms + an edge, never truncate), **Score** each atom
+honor the node-size budget — **capture an oversized atom whole; never truncate and never split** (splitting
+into sibling pages + a `[[link]]` is **promote's** graph-aware job, not capture's)), **Score** each atom
 `now | later | not-needed` (intrinsic importance, NOT novelty — `now` ⇒ stage `--urgent`, `later` ⇒
 stage, `not-needed` ⇒ silently drop), **Stage** each kept atom via `mnx_stage.py add` with
 self-sufficient provenance (artifact, review ids, rejected alternatives, rationale). Capture is the

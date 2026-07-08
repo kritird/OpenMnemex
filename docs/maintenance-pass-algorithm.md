@@ -135,11 +135,14 @@ they derive from is final.
 for each decision in pass.plan.json:        # 1. truth-level mutations first
     relabel tier in the (in-memory) index model
     if death:
-        tombstone X (status: dead, KEEP body, set died, keep id+front-matter)   # or hard-delete if --purge
+        tombstone X via mnx_node.tombstone   # status: dead, KEEP body, set died, keep id+front-matter;
+                                             #   refuses a timeless node; hard-delete only if --purge
         SEVER incident edges TRANSACTIONALLY:
             for each referrer R of X (from REVERSE + cross-links, COLD INCLUDED):
                 rewrite R.edges to drop (R→X)   # or repoint to X.superseded-by
         # never leave an edge pointing at a tombstoned/removed node
+    for X in revalidation plan (step 1b):
+        mnx_node.revalidate(X, ts)          # verified = max(current, ts), monotonic; updated/strength untouched
 
 # 2. derived navigation, rebuilt from the now-final nodes
 regenerate affected index.md sections (HOT/WARM/COLD), denormalizing summary+aliases+stale_after

@@ -75,6 +75,12 @@ documented limits, not defects.
 21. **(W) Mesh mirror consistency.** For every node, each resolved `mentions[].resolved_id` appears in
     that node's `edges` (the front-matter `edges:` list is a generated mirror of the resolved
     `[[wiki-links]]` — Link Reconciliation §8/§10); no resolved mention is missing its mirrored edge.
+22. **(W) Mirror ⊆ body.** For every node, each `mentions[].name` (and thus each mirrored `edge`) traces
+    back to a `[[wiki-link]]` still present in the body. An entry with no matching body link is a
+    **phantom** left by an edit that removed/renamed the link — the mirror is generated from the body
+    (§8), so it must never carry links the body dropped. Cleared by re-running link reconciliation
+    (`mnx_mesh`), which re-derives the mirror; inv-21 alone misses this (a phantom sits in both
+    `mentions` and `edges`, so `mentions ⊆ edges` still holds).
 
 `--fix` resolves all **W** items by regenerating derived files from the nodes (and registers the
 `mnx-regen` merge driver); **E** items involving truth (1, 2, 6, 7) require human/skill attention because

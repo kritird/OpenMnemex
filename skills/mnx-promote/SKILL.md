@@ -23,7 +23,8 @@ lingering held atom at session start/end.
 Background: `docs/staging-and-promotion.md` (the model, the reconcile sub-agent contract),
 `docs/maintenance-pass-algorithm.md` (the folded consolidate), `docs/link-reconciliation.md` (the
 wiki mesh / Step 2b). Helpers: `mnx_binding`, `mnx_stamp`, `mnx_stage`, `mnx_lock`, `mnx_resolve`,
-`mnx_index`, `mnx_doctor`, `mnx_common`, `mnx_mesh`, `mnx_phonebook`, `mnx_simindex`; internal skill:
+`mnx_node` (the deterministic node writer), `mnx_index`, `mnx_doctor`, `mnx_common`, `mnx_mesh`,
+`mnx_phonebook`, `mnx_simindex`; internal skill:
 `mnx-consolidate`.
 
 ## Preflight
@@ -70,20 +71,25 @@ sub-agent** (the live session's dirty context is irrelevant — atoms carry self
 - **It may fork** per cluster / per org for scale. **Plan in parallel; apply serially under the team
   lock** (mirrors consolidate's MARK/SWEEP).
 
-For each staged atom the plan assigns exactly one terminal disposition:
-`CREATE` (new node, real slug id via `mnx_common.slugify`) · `MERGE`/`UPDATE` (fold into an existing
-node — **the default when a fact simply changed**; edit in place, keep the id) · `DROP-DUP`
-(duplicate — discard) · `SUPERSEDE` (**tombstone-with-successor**: CREATE the replacement node, then
-retire the old one — `status: dead`, set `superseded-by: <new-id>`, **keep its body**; repoint every
-referrer to the successor. Reserve this for when the old version must survive as its own linkable node;
-otherwise prefer UPDATE-in-place) · `RESURRECT` (a cold/dead match — revive). Honor the **node-size
-budget**: an over-budget body is split into multiple nodes + an edge, never truncated.
+For each staged atom the plan assigns exactly one terminal disposition — **you decide which; the node
+file is written deterministically by `mnx_node.py`, never by hand** (it mints the id, stamps the clock,
+and enforces the front-matter shape, so the freshness invariants hold by construction):
+`CREATE` (`mnx_node.py create` — new node, real slug minted by the script) · `MERGE`/`UPDATE`
+(`mnx_node.py merge --id <id> [--meaning-change]` — fold into an existing node, **the default when a fact
+simply changed**; keeps the id, edits in place) · `DROP-DUP` (duplicate — discard, no write) ·
+`SUPERSEDE` (**tombstone-with-successor**: `mnx_node.py supersede --old-id <id>` creates the replacement
+and retires the old one — `status: dead`, `superseded-by: <new-id>`, `died` stamped, **body kept**; then
+repoint every referrer to the successor. Reserve this for when the old version must survive as its own
+linkable node; otherwise prefer UPDATE-in-place) · `RESURRECT` (`mnx_node.py resurrect --id <id>` — a
+cold/dead match revived). Honor the **node-size budget**: an over-budget body is split into multiple
+nodes + an edge (Step 2b), never truncated.
 
-**Freshness fields on apply (Freshness & Revalidation):** any node the plan writes fresh knowledge into —
-`CREATE`/`MERGE`/`UPDATE`/`SUPERSEDE`/`RESURRECT` — gets `verified = now` (it was just re-derived under
-the human gate); a meaning change also bumps `updated`. Carry the atom's proposed **`volatility`** onto
-the node, and **surface it in the plan for the human to confirm or override** (e.g. downgrade a fast-rotting
-fact to `volatile`, or mark a definition `timeless`). Default stays `default` (type-derived horizon).
+**Freshness fields on apply (Freshness & Revalidation):** `mnx_node.py` stamps `verified = now` on every
+node it writes for `CREATE`/`MERGE`/`UPDATE`/`SUPERSEDE`/`RESURRECT` (it was just re-derived under the
+human gate) and bumps `updated` only when you pass `--meaning-change` — you never hand-write these
+timestamps. Carry the atom's proposed **`volatility`** onto the node (a `create`/`merge` field), and
+**surface it in the plan for the human to confirm or override** (e.g. downgrade a fast-rotting fact to
+`volatile`, or mark a definition `timeless`). Default stays `default` (type-derived horizon).
 
 **Contradictions are held, not force-resolved.** Present every contradiction to the human. If it can be
 resolved in-cycle (edit the plan, supersede, or drop), do so. If it cannot be resolved now, mark that atom
@@ -152,14 +158,22 @@ marked HELD (the rest still promotes) unless the human chooses to abort the whol
 
 ## Step 5 — Apply (serial, locked, atomic) → push → clear staging
 After approval, apply the plan **serially** under the lock in fixed order (truth before derived):
-1. Write/CREATE/MERGE/SUPERSEDE node files (real slug ids); then `mnx_mesh.apply_links` to write the
-   resolved wiki-links + back-links onto the source notes and record red-links (front-matter `edges:` is
-   the generated mirror — never hand-authored); apply consolidate's tombstones + transactional edge
-   severing.
+1. Persist the node truth **through `mnx_node.py`, never by hand** — one call per disposition:
+   `mnx_node.py create` (CREATE) · `merge --id <id> [--meaning-change]` (MERGE/UPDATE) ·
+   `supersede --old-id <id>` (SUPERSEDE) · `resurrect --id <id>` (RESURRECT). The script mints the slug,
+   stamps `created`/`updated`/`verified` from the one clock, and keeps a superseded/dead node's body — so
+   inv 9b is satisfied by construction. **Then** `mnx_mesh.apply_links` writes the resolved wiki-links +
+   back-links onto the source notes and records red-links (front-matter `edges:` is the generated mirror —
+   never hand-authored); then apply consolidate's tombstones (`mnx_node.py tombstone`) + transactional
+   edge severing + freshness advances (`mnx_node.py revalidate`).
 2. Regenerate affected indexes (`mnx_index.regenerate_index` — denormalize summary/aliases; chain the
-   cold tier when over `index_chunk_rows`); delta-update `cross-links.md`; advance high-water marks;
+   cold tier when over `index_chunk_rows`); regenerate `cross-links.md` from the just-written boundary
+   edges with `mnx_doctor.py regen-crosslinks <graph_root>` (`mnx_mesh.apply_links` writes the boundary
+   edge into node front-matter but NOT into `cross-links.md`, so this is required whenever any
+   cross-cluster link was created — else Step 3's check fails inv-4); advance high-water marks;
    stamp `last_compaction` + `config_version`.
-3. **Doctor:** `mnx_doctor.py check <graph_root>` must pass (E == 0).
+3. **Doctor:** `mnx_doctor.py check <graph_root>` must pass (E == 0). (Step 2 already regenerated
+   cross-links via the same `_boundary_rows` derivation this check gates on, so inv-4 is satisfied.)
 4. **Persist:** `mnx_binding.py persist --message "mnx-promote: <plan summary>"` — kind-aware
    (git-remote → commit **+ push** with bounded retry; git-local → commit; plain-local → audit-append).
    On `push: failed`/`conflict` the merge **is already committed** in the clone — **do not clear
@@ -170,7 +184,7 @@ After approval, apply the plan **serially** under the lock in fixed order (truth
    (`mnx_stage.py hold --id <pid> --reason … --contradicts <graph-id>`), then clear the atoms that
    promoted (`mnx_stage.py clear-merged --ids <pid,pid,…>`). Do **not** use the all-or-nothing
    `mnx_stage.py clear` on the per-atom path — it would discard the held atoms too. Remove
-   `pass.plan.json`, release the lock. (`mnx_stage.py check-staging` / `held-list` confirms what remains.)
+   `pass.plan.json`, release the lock. (`mnx_doctor.py check-staging` / `mnx_stage.py held-list` confirms what remains.)
 
 ## Never
 - Never apply without the single combined plan approved by the human.

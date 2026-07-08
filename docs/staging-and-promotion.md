@@ -69,7 +69,10 @@ aliases: [field 124, DE124]
 domain: [settlement]               # routing key(s)
 score: now                         # now | later   ('not-needed' is dropped, never staged)
 urgent: true                       # sharpens the nag; NEVER inline-pushes
+volatility: default                # LLM-proposed freshness horizon; human confirms/overrides at promote
 trigger: "reviewing a settlement spec"   # REQUIRED for type: pattern
+mentions:                          # GENERATED from body [[wiki-links]] at capture; resolved_id null until promote
+  - { name: iso8583-field124, resolved_id: null }
 provenance:
   artifact: tap-vic-settlement-spec
   reviews: [r3, r7]                # the specific human-review ids that fed it
@@ -192,6 +195,11 @@ flush usage stamps
   → apply serially under the lock  → doctor (must pass)  → persist (commit + push by kind)
   → clear the promoted atoms (clear_merged) + hold the contradicting ones — only on confirmed persist
 ```
+
+**Node persistence is deterministic.** The LLM decides the disposition (CREATE / MERGE / SUPERSEDE /
+RESURRECT); the node file itself is written by `mnx_node` — it mints the real slug, stamps
+`created`/`updated`/`verified` from the one clock, and enforces the front-matter shape — so the freshness
+invariants hold by construction and no timestamp/id is ever hand-authored (docs/script-contracts.md §mnx_node).
 
 Consolidation runs over the post-merge graph and is shown in the **same** approval plan, so its one HITL
 escape — a budget overflow that even index chaining cannot resolve — is handled by the human who is

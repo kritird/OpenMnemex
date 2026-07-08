@@ -61,7 +61,8 @@ def plan_links(notes: list[dict[str, Any]], team: str) -> dict[str, Any]:
     written this cycle. Returns:
       { links:[{source_id, to, type, origin}],       # resolved wiki-links to write on the source note
         red_links:[{source_id, name, type}],         # [[name]] with no page yet — kept latent
-        backlinks:[{source_id, to, name, type, origin}] }  # older notes healed by a new/renamed page
+        backlinks:[{source_id, to, name, type, origin}],  # older notes healed by a new/renamed page
+        sources:[id, ...] }  # batch notes whose FULL body was parsed → authoritative for apply's re-derive
     """
     catalog = _batch_catalog(notes)
     links: list[dict[str, Any]] = []
@@ -80,11 +81,18 @@ def plan_links(notes: list[dict[str, Any]], team: str) -> dict[str, Any]:
             r = mnx_phonebook.resolve(name, team)
             to = r.get("resolved") or catalog.get(_norm(name))
             ltype = typed.get(_norm(name))
+            # a superseded name resolves to its live successor → mark the repoint so the skill can
+            # optionally rewrite the body [[old]]→[[new]] (F8); the edge is already forwarded here.
+            origin = "supersede-repoint" if r.get("match") == "superseded-by" else "wikilink"
             if to and _norm(to) != _norm(nid):
                 key = (nid, _norm(to))
                 if key not in seen_link:
                     seen_link.add(key)
-                    links.append({"source_id": nid, "to": to, "type": ltype, "origin": "wikilink"})
+                    link = {"source_id": nid, "to": to, "type": ltype, "origin": origin}
+                    if origin == "supersede-repoint":
+                        link["forwarded_from"] = r.get("forwarded_from") or name
+                        link["name"] = name
+                    links.append(link)
             elif not to:
                 red.append({"source_id": nid, "name": name, "type": ltype})
 
@@ -107,7 +115,8 @@ def plan_links(notes: list[dict[str, Any]], team: str) -> dict[str, Any]:
             backlinks.append({"source_id": rl["source_id"], "to": nid,
                               "name": rl["name"], "type": rl.get("type"), "origin": "backfill"})
 
-    return {"links": links, "red_links": red, "backlinks": backlinks,
+    sources = [n["id"] for n in notes if n.get("id")]
+    return {"links": links, "red_links": red, "backlinks": backlinks, "sources": sources,
             "counts": {"links": len(links), "red_links": len(red), "backlinks": len(backlinks)}}
 
 
@@ -140,7 +149,15 @@ def _write_node_fm(path: str, mutate) -> None:
 
 def apply_links(plan: dict[str, Any], team: str) -> dict[str, Any]:
     """Write the link plan onto source nodes: mirror resolved links into `edges:`, record red-links
-    in `mentions:`. Idempotent. Returns a summary of edits."""
+    in `mentions:`. Idempotent.
+
+    Front-matter `edges:`/`mentions:` are a GENERATED MIRROR of the body's resolved [[wiki-links]]
+    (Link Reconciliation §8), so for a BATCH note — one whose full body was parsed by plan_links,
+    listed in plan['sources'] — apply RE-DERIVES the mirror from this cycle's plan (set-REPLACE):
+    any edge/mention whose [[link]] the author removed is pruned, not left as a phantom. A
+    backlink-only source (an older note healed by L2 back-fill, absent from plan['sources']) has only
+    its incremental link in the plan, so it is APPENDED to that note's existing mirror. Returns a
+    summary of edits."""
     paths = _id_to_path(team)
     # group every resolved link (outbound + backlink) by its source node
     by_source: dict[str, list[dict[str, Any]]] = {}
@@ -149,19 +166,27 @@ def apply_links(plan: dict[str, Any], team: str) -> dict[str, Any]:
     reds_by_source: dict[str, list[dict[str, Any]]] = {}
     for rl in plan.get("red_links", []):
         reds_by_source.setdefault(rl["source_id"], []).append(rl)
+    # batch notes: plan holds their COMPLETE resolved set → re-derive (prune removed links);
+    # a batch note that dropped all its links still appears here so its stale mirror is cleared.
+    batch = set(plan.get("sources", []))
 
     edited = 0
     missing: list[str] = []
-    for sid in set(by_source) | set(reds_by_source):
+    for sid in set(by_source) | set(reds_by_source) | batch:
         path = paths.get(sid)
         if not path:
             missing.append(sid)
             continue
 
         def mutate(fm, sid=sid):
-            edges = [e for e in (fm.get("edges") or []) if isinstance(e, dict) and e.get("to")]
+            if sid in batch:
+                # authoritative: rebuild the mirror from scratch so removed links leave no phantom
+                edges, mentions = [], []
+            else:
+                # backlink-only older note: preserve its mirror, append the healed link
+                edges = [e for e in (fm.get("edges") or []) if isinstance(e, dict) and e.get("to")]
+                mentions = [m for m in (fm.get("mentions") or []) if isinstance(m, dict)]
             have = {_norm(e["to"]) for e in edges}
-            mentions = [m for m in (fm.get("mentions") or []) if isinstance(m, dict)]
             m_have = {_norm(m.get("name", "")) for m in mentions}
             for ln in by_source.get(sid, []):
                 if _norm(ln["to"]) not in have:
