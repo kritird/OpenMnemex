@@ -61,7 +61,7 @@ At birth, `verified = created`.
 
 ## 3️⃣ `stale_after` — the precomputed freshness horizon
 
-Freshness is materialized in the index exactly like the Cold tier's existing `expires` column: a single
+Freshness is materialized in the index exactly like the Cold tier's `expires` column: a single
 **precomputed timestamp**, `stale_after`, denormalized onto every index row. Read then needs no arithmetic —
 it compares `now > stale_after ⇒ stale`. Chunk-1-visible, zero body loads.
 
@@ -148,7 +148,7 @@ solely to advance `verified`. This is why "still true" costs one log line and ne
 `volatility: timeless` is not only "never stale" — it also **pins the atom against automatic death**. A
 foundational definition that nobody has read in months has decayed in *heat* (it may sit in cold — that is
 just read cost) but it must never be **tombstoned** by the cold-TTL gate. So consolidation exempts timeless
-nodes from the death conjunction gate, alongside the existing sole-referrer reluctance (Maintenance Pass Algorithm §Phase A.4).
+nodes from the death conjunction gate, alongside the sole-referrer reluctance (Maintenance Pass Algorithm §Phase A.4).
 
 > [!IMPORTANT]
 > Timeless blocks only *automatic* (TTL-driven) death. An eternal truth that genuinely gets **replaced** is
@@ -164,15 +164,13 @@ nodes from the death conjunction gate, alongside the existing sole-referrer relu
 
 ## 8️⃣ Consolidation's role (Maintenance Pass Algorithm)
 
-Folded into the existing back-half-of-promote pass, against the frozen snapshot:
+Folded into the back-half-of-promote pass, against the frozen snapshot:
 
 1. **Advance `verified`** from any `revalidated` registry event past the cluster high-water mark (same replay
    as usage stamps; `revalidated` events carry weight 0 so they never enter the strength fold).
 2. **Recompute `stale_after`** for every touched node (and for *all* nodes on a `config_version` change,
-   inside the existing re-normalization step).
-3. **Migration backfill:** the first pass after upgrade sets `verified = updated` for legacy nodes that lack
-   it (best available proxy), then computes `stale_after`.
-4. **Death gate exemption:** never mark a `timeless` node for death (§7).
+   inside the re-normalization step).
+3. **Death gate exemption:** never mark a `timeless` node for death (§7).
 
 ---
 
@@ -189,8 +187,7 @@ Folded into the existing back-half-of-promote pass, against the frozen snapshot:
 ## 🔟 Explicitly out of scope
 
 - **No proactive auto-refresh.** There is no background worklist that re-verifies atoms on a schedule.
-  Revalidation is **read-triggered only** — the cue fires when a stale atom is actually surfaced. (A
-  heat×staleness worklist was considered and deliberately deferred.)
+  Revalidation is **read-triggered only** — the cue fires when a stale atom is actually surfaced.
 - **No second decay rate.** Freshness never reads or writes `strength`, and never changes a tier.
 
 ---
@@ -210,7 +207,6 @@ Folded into the existing back-half-of-promote pass, against the frozen snapshot:
 | Cold + stale + near-`expires` | independent: recall boost (heat) and refresh cue (freshness) may both fire |
 | `freshness_ttl_days` edited | drift warning now; all `stale_after` recomputed next consolidation |
 | New / merged atom | `verified = now`, fresh from birth |
-| Legacy node (no `verified`) | backfilled `verified = updated` on first upgrade pass |
 | Model can't verify in-session | no stamp; stays stale; cue returns next session (once/session) |
 
 ---

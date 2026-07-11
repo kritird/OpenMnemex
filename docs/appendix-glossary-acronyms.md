@@ -23,8 +23,7 @@ extraction completeness. Shared by episodic capture (guardrail mode) and ingest 
 bounded by `max_glean_passes` (default 2). The judgment stays in the LLM; `mnx_glean.py` only bounds it.
 
 **Ingest** — bootstrapping/updating the graph from an existing *corpus* without a live session
-(`mnx-ingest`): walk → distill → wikify → stage a labeled *ingest batch* → `mnx-promote --bulk`. A source
-adapter in front of the existing pipeline, not a new subsystem.
+(`mnx-ingest`): walk → distill → wikify → stage a labeled *ingest batch* → `mnx-promote --bulk`.
 
 **Ingest batch** — the labeled group of atoms staged by one ingest run (`ingest_batch: ing-<date>-<id>`,
 `bulk: true`); label-partitioned from hand-captures so an import never entangles a user's episodic captures.
@@ -37,7 +36,7 @@ analog of per-atom `domain:`); the human approves/edits it once and atoms inheri
 
 **Wikification** — the entity-linking step that reconstructs the entity set from a cold corpus and emits
 `[[wiki-links]]` by name into atom bodies (mention detection → candidate generation → disambiguation),
-feeding the existing mesh (Step 2b) unchanged.
+feeding the mesh.
 
 **Cold tier** — the lowest active memory tier; nodes reachable only by deep search or by an edge from a
 live node; subject to TTL death.

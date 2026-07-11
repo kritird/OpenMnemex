@@ -298,9 +298,9 @@ teams is handled as a **human ritual**, not an automated guarantee — the archi
 
 ---
 
-## 1️⃣3️⃣ What stays deliberately soft (stated, not papered over)
+## 1️⃣3️⃣ What stays deliberately soft
 
-Two things cannot be hardened and the standard says so plainly:
+Two things cannot be hardened:
 
 - **Self-reported usage quality** (§6) — mitigated by deterministic structural strength as ballast.
 - **Cross-cluster / cross-team duplication** (§11–12) — the same concept may be authored independently

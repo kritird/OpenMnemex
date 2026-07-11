@@ -5,8 +5,8 @@
 > remote) is distilled into the knowledge graph as a one-time bootstrap — and kept in sync on re-run —
 > **without a live session**. Episodic capture (Staging & Promotion) is unchanged and takes over afterward.
 >
-> **Status:** implemented (deterministic front-end + skills; see [`script-contracts.md`](script-contracts.md)
-> for `mnx_ingest` / `mnx_er` / `mnx_glean` and the `mnx_stage` bulk profile) · **Owner:** Kriti. Read
+> See [`script-contracts.md`](script-contracts.md) for `mnx_ingest` / `mnx_er` / `mnx_glean` and the
+> `mnx_stage` bulk profile. Read
 > [`staging-and-promotion.md`](staging-and-promotion.md) (the capture/promote split this reuses),
 > [`multi-graph-and-team-routing.md`](multi-graph-and-team-routing.md) (which-graph / which-team),
 > [`link-reconciliation.md`](link-reconciliation.md) (the mesh), and
@@ -36,7 +36,7 @@ flowchart LR
     ING -->|labeled ingest batch| STG[(📥 staging tier<br/>bulk budget)]
     STG -->|bulk cycle| PROM[🚀 mnx-promote --bulk<br/><i>reconcile · mesh · consolidate</i>]
     PROM --> G[(🗃️ knowledge graph)]
-    PROM -.->|source_path@commit → node_ids| MAN[(🗂️ ingest manifest<br/>.mnemex/ingest/)]
+    PROM -.->|"source_path@commit → node_ids"| MAN[(🗂️ ingest manifest<br/>.mnemex/ingest/)]
     MAN -.->|delta on re-run| ING
     classDef s fill:#14507a,stroke:#39c,color:#fff;
     classDef c fill:#4b2e83,stroke:#a98ce0,color:#fff;
@@ -269,8 +269,8 @@ PASS 2 — wikify (rewrite the distilled atoms against that catalog)
 `resolves … against the phonebook (+ in-batch catalog)`) — the hook for Pass 2 exists; ingest just populates it.
 
 The **GLEAN** step is GraphRAG's *gleanings* technique — a bounded multi-pass "did I miss anything?" loop
-that materially lifts extraction recall. It is specced and built as its **own feature** (it also improves
-episodic capture) — see the [build plan](../INGESTION-BUILD-PLAN.md); ingest is one of its two consumers.
+that materially lifts extraction recall. It is a shared, source-agnostic recall pass that also improves
+episodic capture; ingest is one of its consumers.
 
 ### Red-links are load-bearing here
 
@@ -382,7 +382,7 @@ Leiden as an aid for the structure-poor case, not the default.
 
 ---
 
-## 1️⃣3️⃣ Open questions (to settle before build)
+## 1️⃣3️⃣ Open questions
 
 1. **Language coverage for `interface`/`code-doc` classification** — start with a few (TS/Py/Go/proto) via
    lightweight per-language extractors, or a language-agnostic heuristic (exported-symbol regex + docstring
@@ -395,7 +395,7 @@ Leiden as an aid for the structure-poor case, not the default.
 4. **ER thresholds** — the Fellegi-Sunter match / possible / non-match cutoffs (§9): fixed defaults, or
    learned per-graph? Fixed-with-override is likely enough for v1; the `possible` band is HITL anyway.
 
-### Resolved decisions
+### Design decisions
 
 - **The GraphRAG machinery stays ingest-only — it is *not* adopted for episodic capture.** ER clustering,
   Leiden communities, and the two-pass catalog solve *cold-input + scale + redundancy* problems; episodic
@@ -408,7 +408,7 @@ Leiden as an aid for the structure-poor case, not the default.
   same `staging → promote → mesh` backbone.
 - **The one transferable technique — *gleanings* — IS backported**, but as a shared, source-agnostic
   recall pass (a bounded "what did I miss?" loop), not as the rest of the machinery. It benefits episodic
-  capture and ingest equally and is built once. Full spec + phases: [build plan](../INGESTION-BUILD-PLAN.md).
+  capture and ingest equally and is built once.
 
 ---
 

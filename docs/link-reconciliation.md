@@ -3,16 +3,13 @@
 > Part of the **Mnemex Context Graph** standard. This document specifies **how a note becomes a *linked*
 > node** — how the `[[wiki-links]]` an author embeds in a note body are resolved into a navigable mesh at
 > promote time, how a link to a page that does not exist yet is remembered (a **red-link**) and healed
-> later, and how a new note causes older notes to point at it. Today promote *places* a node and assigns a
-> disposition (Staging & Promotion), but link formation is left to whatever the reconcile sub-agent happens to notice.
-> This doc makes mesh-building a **deterministic, snapshot-driven, two-directional phase** of promote —
-> *Step 2b*.
+> later, and how a new note causes older notes to point at it. Mesh-building is a **deterministic,
+> snapshot-driven, two-directional phase** of promote — *Step 2b*.
 >
-> **Status:** proposed · **Owner:** Kriti · spec-first (the resolver primitives already ship; the flow and
-> the wiki-link authoring surface do not). Read [`staging-and-promotion.md`](staging-and-promotion.md)
-> (the promote cycle), [`data-model-and-schemas.md`](data-model-and-schemas.md) (node schema),
+> Related reading: [`staging-and-promotion.md`](staging-and-promotion.md) (the promote cycle),
+> [`data-model-and-schemas.md`](data-model-and-schemas.md) (node schema),
 > [`script-contracts.md`](script-contracts.md) (`mnx_phonebook`, `mnx_simindex`, `mnx_resolve`) and
-> [`maintenance-pass-algorithm.md`](maintenance-pass-algorithm.md) first.
+> [`maintenance-pass-algorithm.md`](maintenance-pass-algorithm.md).
 
 ---
 
@@ -36,15 +33,15 @@ Everything below is the mechanics of that sentence. Two deliberate design commit
 
 ---
 
-## 1️⃣ The gap this closes
+## 1️⃣ The three things a mesh needs
 
-Promote today does two of the three things a mesh needs, and skips the third:
+Promote handles all three concerns of building a linked graph:
 
-| # | Concern | Status today |
+| # | Concern | Owner |
 |---|---|---|
-| 1 | **Placement** — which cluster/folder a node lands in | ✅ specified (Staging & Promotion disposition + Multi-Graph & Team Routing) |
-| 2 | **Disposition** — CREATE / MERGE / SUPERSEDE / DROP-DUP / RESURRECT | ✅ specified (Staging & Promotion §reconcile) |
-| 3 | **Linking** — resolving the note's `[[links]]`, and healing links *into* it from older notes | ❌ **emergent, opportunistic, unspecified** |
+| 1 | **Placement** — which cluster/folder a node lands in | Staging & Promotion disposition + Multi-Graph & Team Routing |
+| 2 | **Disposition** — CREATE / MERGE / SUPERSEDE / DROP-DUP / RESURRECT | Staging & Promotion §reconcile |
+| 3 | **Linking** — resolving the note's `[[links]]`, and healing links *into* it from older notes | this doc (Step 2b) |
 
 ---
 
@@ -67,7 +64,7 @@ flowchart LR
     class P1,P2,P3 p;
 ```
 
-- **Capture** never touches the graph, never resolves a name, never splits. Its only new job: keep the
+- **Capture** never touches the graph, never resolves a name, never splits. Its job is to keep the
   `[[links]]` the author embedded (hoist them to a `mentions:` list so promote doesn't have to re-parse
   prose). A re-capture of identical content stays idempotent (the links are part of the body hash).
 - **Promote** owns everything graph-aware: splitting a too-big note, resolving names to real pages, writing
@@ -134,8 +131,8 @@ flowchart TD
 ```
 
 - **Outbound** is easy: the note names its targets; we resolve and store the links on the note itself.
-- **Inbound** — the direction promote misses today — has one **deterministic** engine and one **judgment**
-  engine, and both edit the *older* note (never the new one):
+- **Inbound** has one **deterministic** engine and one **judgment** engine, and both edit the *older* note
+  (never the new one):
   - *Deterministic:* **red-link back-fill** (§3). Older notes that already named this concept now resolve.
   - *Judgment:* `mnx_simindex` whispers "this older note looks related" → a `⚠ suggested link` the human
     confirms in the plan. Similarity **never** becomes a link on its own.
@@ -144,8 +141,8 @@ flowchart TD
 
 ## 5️⃣ What we reason over — "knowing the pages"
 
-Link reconciliation reads a **frozen snapshot** of four already-shipped sources (same discipline as the
-consolidate pass — never read state you have already mutated):
+Link reconciliation reads a **frozen snapshot** of four sources (same discipline as the consolidate pass —
+never read state you have already mutated):
 
 | Source | Script | Role | Authoritative? |
 |---|---|---|---|
@@ -198,7 +195,7 @@ Inserted into the promote cycle **after** dispositions are assigned and **before
 ```
 flush usage stamps
   → Step 2  reconcile + assign dispositions (CREATE/MERGE/SUPERSEDE/DROP-DUP/RESURRECT)   [Staging & Promotion]
-  → Step 2b LINK RECONCILIATION  (this doc)                                                ← NEW
+  → Step 2b LINK RECONCILIATION  (this doc)
   → Step 3  consolidate the post-merge graph (re-tier, death, edge hygiene, budget)        [Maintenance Pass Algorithm]
   → Step 4  ONE approval plan (human gate) — merge + LINKS + consolidate together
   → Step 5  apply serially under the lock → doctor → persist → clear staging
@@ -290,9 +287,6 @@ doctor: invariants 18 (phonebook completeness/paths), 19 (unresolved mentions/re
 
 ## 8️⃣ Where links live: body is truth, front-matter is a mirror
 
-This is the one structural shift from the pre-wiki design (which treated front-matter `edges:` as
-hand-authored truth).
-
 ```mermaid
 flowchart LR
     BODY["📄 node body<br/>…settles via [[iso8583-field124]]…"] -->|parse + resolve at promote| FM["🗂️ front-matter edges: (GENERATED mirror)<br/>- {to: iso8583-field124}"]
@@ -359,9 +353,9 @@ and heals every red-link the new page completes.
 
 ---
 
-## 1️⃣1️⃣ Schema deltas (detail in Data Model & Schemas once ratified)
+## 1️⃣1️⃣ Schema (detail in Data Model & Schemas)
 
-Additive; no migration of existing files needed (absent fields default empty).
+Absent fields default empty.
 
 - **Node body:** may contain inline `[[name]]` / `[[name|type]]` wiki-links. This is the authoring surface.
 - **Node front-matter `mentions:`** — generated from the body at promote:
@@ -370,28 +364,27 @@ Additive; no migration of existing files needed (absent fields default empty).
     - { name: iso8583-field124, resolved_id: iso8583-field124, type: null }   # live link (untyped)
     - { name: de124-legacy-map, resolved_id: null,             type: null }   # 🔴 red-link (latent)
   ```
-- **Node front-matter `edges:`** — becomes the **generated mirror** of the resolved `mentions` (was
-  hand-authored). Same shape as today (`{to, type}`), now derived.
+- **Node front-matter `edges:`** — the **generated mirror** of the resolved `mentions` (shape `{to, type}`).
 - **Staged-atom front-matter `mentions:`** — capture hoists the body's `[[names]]` here verbatim
-  (`resolved_id` always null at capture; promote resolves). Closes the "capture can't store a link" gap.
+  (`resolved_id` always null at capture; promote resolves).
 
 ---
 
-## 1️⃣2️⃣ Script contracts to add / extend (build phase)
+## 1️⃣2️⃣ Script contracts
 
 Follows Script Contracts conventions (`STATUS=OK|FAIL` + JSON; mutating ops no-op without the team lock; pure
 proposers never write).
 
 ```
-# mnx_common.py  (extend)
+# mnx_common.py
 parse_wikilinks(body) -> [{name, type?, display?}]        # [[name]] / [[name|type]] / [[name|type|display]]
 
-# mnx_phonebook.py  (extend)
+# mnx_phonebook.py
 resolve_batch(names, team) -> {resolved:{name:id}, red:[name], cross:[{name,id,team}]}
 red_links(team) -> [{source_id, source_path, name, type?}]                 # outstanding unresolved mentions
 backfill(team, new_id, aliases) -> [{source_id, source_path, name, type?}] # red-links this id resolves
 
-# mnx_mesh.py  (NEW — the Step 2b proposer; pure/read-only, mirrors consolidate MARK)  [IMPLEMENTED]
+# mnx_mesh.py  (the Step 2b proposer; pure/read-only, mirrors consolidate MARK)
 plan_links(notes, team) -> {
     links:[{source_id, to, type|null, origin:'wikilink'|'backfill'}],
     red_links:[{source_id, name, type}],
@@ -404,9 +397,9 @@ apply_links(plan, team)                              # Step 5: writes body links
 #       deterministic script function; the sub-agent inserts the [[sibling]] link, then plan_links resolves it.
 # Fuzzy inbound/outbound suggestions come from mnx_simindex.query (HITL-gated), not mnx_mesh.
 
-# mnx_doctor.py  (present — assert in the pass)
+# mnx_doctor.py  (asserts in the pass)
 # inv 18: phonebook completeness + path accuracy   |  inv 19: unresolved mentions / red links
-# add:    edges == resolved subset of mentions == resolved [[links]] in the body (mirror consistency)
+# inv:    edges == resolved subset of mentions == resolved [[links]] in the body (mirror consistency)
 ```
 
 ---

@@ -166,12 +166,9 @@ per-author and local — never part of the shared graph, never pushed. See
 > captures and un-flushed stamps live **outside** the clone: a capture is not a push, so it must survive
 > the resync until a promote merges it.
 
-For a remote graph the session always starts byte-for-byte at the remote HEAD. **Persistence is the
-author's explicit act:** `mnx-promote` persists (see *Graph kinds*). Any local divergence left over in
-a remote clone from a prior session is *intentionally discarded* on resync — if the author did not push
-it, it was not meant to persist. There is no salvage/auto-commit at session start. (Local-folder graphs
-are never reset, so nothing is discarded.) Note this is exactly why staged captures live **outside** the
-clone: a capture is not a push, so it must survive the resync until a promote merges it.
+**Persistence is the author's explicit act:** `mnx-promote` persists (see *Graph kinds*). If the author
+did not push, it was not meant to persist — there is no salvage or auto-commit at session start.
+Local-folder graphs are never reset, so nothing is discarded.
 
 ### 💾 Write-back
 
@@ -211,7 +208,7 @@ crashed session surfaces next time instead of silently risking a double-apply.
 
 ## 🚀 Init flow (the preflight authority)
 
-`mnx-init` becomes a branching command that detects state and offers:
+`mnx-init` is a branching command that detects state and offers:
 
 1. **Create a new graph** — scaffold a graph (org `index.md`, `mnemex.config.md` from defaults,
    `.mnemex/` state, a first `team-<name>/` skeleton) either in a git repo or in a **local folder**

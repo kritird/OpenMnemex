@@ -79,7 +79,7 @@ for each cluster C in SNAPSHOT:
         score[X] = s
 
         # 1b. Freshness (independent of strength; Freshness & Revalidation): fold revalidation events, recompute horizon
-        verified[X] = X.verified or X.updated                 # migration backfill if absent
+        verified[X] = X.verified or X.updated                 # fall back to updated when verified is absent
         for d in deltas where d.id == X.id and d.role == 'revalidated':
             verified[X] = max(verified[X], d.ts)              # monotonic; weight 0 — never touches strength
         stale_after[X] = resolve_horizon(X, verified[X])      # null for volatility:timeless / dead

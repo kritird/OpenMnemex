@@ -71,7 +71,7 @@ ingest_bulk_hard_atoms: 5000      # a bulk batch REFUSES past this — drain it 
 ingest_max_atoms_per_run: 2000    # per-run cost ceiling; excess resumes on the next run (--resume).
 er_match_threshold: 0.85          # entity-resolution: score ≥ this → same entity (deterministic merge).
 er_possible_threshold: 0.60       # [possible, match) → the HITL "⚠ suggested" band (the LLM judge runs
-                                  #   ONLY here; below possible → distinct). Fixed-with-override is v1.
+                                  #   ONLY here; below possible → distinct). Fixed thresholds with override.
 code_extract: gated               # gated | deep | off — the code value-gate: gated stages only public /
                                   #   documented / config-only symbols (per-subtree overridable at gate #1).
 # max_glean_passes: 2             # in USER config (~/.claude/mnemex/config.md), not here — the glean
@@ -136,9 +136,7 @@ flowchart LR
     class RENORM,STAMP,TIER safe;
 ```
 
-Because decay is computed lazily against a *stored* strength, editing `half_life_days` (hence `λ`)
-silently re-interprets every stored number — without a guard, a batch of nodes could jump tiers
-overnight. The protocol guards this:
+The protocol guards this:
 
 1. Any change should bump `config_version`.
 2. `.mnemex/config_version` records the version and `λ` **in force at the last compaction**.

@@ -6,12 +6,10 @@
 > regeneration, invariant checks, locking — lives in a deterministic script, never in skill prose.
 > Every script emits `STATUS=OK|FAIL` + JSON so a skill can parse the result.
 
-The skills reason; these scripts decide deterministically. Anything that must be exact lives here, not
-in skill prose. **This document specifies the contracts — signatures, inputs, outputs, invariants. The
-scripts in `scripts/` are implemented against these contracts as of `v0.1.0`** (`mnx_common`,
-`mnx_config`, `mnx_decay`, `mnx_resolve`, `mnx_compact`, `mnx_stamp`, `mnx_stage`, `mnx_node`, `mnx_index`,
-`mnx_lock`, `mnx_doctor`, `mnx_status`, and the `mnx_binding` entry point the session hook and every
-skill depend on to locate the graph). All scripts
+This document specifies the script contracts — signatures, inputs, outputs, invariants. The scripts in
+`scripts/` implement them: `mnx_common`, `mnx_config`, `mnx_decay`, `mnx_resolve`, `mnx_compact`,
+`mnx_stamp`, `mnx_stage`, `mnx_node`, `mnx_index`, `mnx_lock`, `mnx_doctor`, `mnx_status`, and the
+`mnx_binding` entry point the session hook and every skill depend on to locate the graph. All scripts
 are Python 3.9+, standard library + `PyYAML` only, runnable as
 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.py …`, and emit machine-readable `STATUS=OK|FAIL` plus
 JSON on stdout so a skill can parse the result.
@@ -49,7 +47,7 @@ malformed front-matter rather than guessing.
 
 ---
 
-## 🔗 `mnx_binding.py` — graph binding resolution, sync + persistence  *(IMPLEMENTED)*
+## 🔗 `mnx_binding.py` — graph binding resolution, sync + persistence
 
 Connects an author in any project to the graph, which is either a **git remote** or a **local folder**.
 Self-contained (does not import the other helpers); stdlib + `PyYAML` only.
@@ -163,7 +161,7 @@ navigation, never nodes (excluded from `iter_node_files`).
 Persists node truth for promote (CREATE/MERGE/SUPERSEDE/RESURRECT) and consolidate (tombstone,
 `verified`-advance). The reconcile *judgment* (which disposition, which node, what body) stays in the
 skill/sub-agent; this script executes an **already-decided** disposition as a mechanical, invariant-
-preserving write — the missing peer to `mnx_stage` (staged atoms), `mnx_mesh` (edges), `mnx_index`
+preserving write — the deterministic peer to `mnx_stage` (staged atoms), `mnx_mesh` (edges), `mnx_index`
 (indexes). Called under the team lock (the skill holds it; the writer does not take the lock itself).
 
 ```
@@ -199,7 +197,7 @@ deltas_after(cluster, mark) -> list[{id, ts, role, weight}]
 fold(materialized_state, deltas, cfg, now) -> new_materialized_state   # pure
     # strength fold skips role in {flag, revalidated} (weight-0 freshness events never boost);
     # a `revalidated` delta advances the node's `verified` (monotonic max), then stale_after is
-    # recomputed via mnx_config.resolve_horizon. `verified` defaults to `updated` if absent (migration).
+    # recomputed via mnx_config.resolve_horizon. `verified` defaults to `updated` when absent.
 advance_highwater(cluster, mark)            # checkpoint; does NOT delete registry lines
 overdue(team, cfg, now) -> {due: bool, days_overdue: int, config_drift: bool}
 ```
@@ -222,7 +220,7 @@ kinds are never reset, so their stamps go straight to the registry. Imports `mnx
 ```
 append(cluster, id, role, weight=1.0, ts=None) -> {action: spilled|appended|error, ...}
     # git-remote  -> append {cluster_rel, line} to ~/.claude/mnemex/staging/<graph-slug>/stamps.jsonl
-    #                (co-located with capture staging atoms; same slug as mnx_stage — see docs/11)
+    #                (co-located with capture staging atoms; same slug as mnx_stage)
     # git/plain-local -> append the line straight to <cluster>/registry.md (already durable)
 flush(message) -> {action: flushed|deferred|noop, persist, pending, clusters, push?, ...}
     # remote only: replay the spill into each cluster's registry, then mnx_binding.persist (commit+push).
@@ -462,7 +460,7 @@ pairs(scope, threshold=0.5, with_atoms=None, intra=False) -> {candidate_pairs:[{
     # default (no flags): near-duplicate NODE pairs ACROSS clusters — the doctor's S2 worklist.
     # AS THE ER BLOCKER (docs/corpus-ingestion.md §9): `with_atoms` injects staged atoms (cluster=null) so
     # blocking covers staged↔graph and staged↔staged; `intra=True` drops the same-cluster skip so
-    # intra-batch duplicates surface (DP5). The existing cross-cluster S2 behavior is unchanged by default.
+    # intra-batch duplicates surface (DP5). With no flags, only the cross-cluster S2 behavior applies.
 ```
 Pure-python MinHash + LSH over `summary+aliases` (word tokens + 3-char shingles → typo tolerance).
 CLI: `query --text … --scope … [--threshold] | pairs --scope … [--threshold] [--with staged.json] [--intra]`.
@@ -493,7 +491,7 @@ CLI: `resolve --graph r --atoms staged.json [--team t] [--match 0.85] [--possibl
 duplicates collapse before staging); exact-resolves / fuzzy-proposes (the `possible` band never auto-merges);
 runs per delta batch over {new atoms ∪ existing pages}, never globally over the whole graph.
 
-### Additions to existing scripts
+### Additional functions on core scripts
 
 - **`mnx_decay.struct_g(weighted_in_degree, cfg)`**: saturating map of liveness-weighted in-degree
   → structural strength ∈ [0, strength_max]; the deterministic dual of `strength_max` (no *structural*
@@ -509,13 +507,13 @@ runs per delta batch over {new atoms ∪ existing pages}, never globally over th
   CLI `acquire-cluster | release-cluster`.
 - **`mnx_stage`** held-contradictions queue: `hold(pid, reason, contradicts)`, `release_held`,
   `drop_held`, `held_status`, `clear_merged(pids)` (per-atom terminal disposition vs all-or-nothing
-  `clear`). `status()` now carries a `held` block. CLI `hold | held-list | release-held | drop-held |
+  `clear`). `status()` carries a `held` block. CLI `hold | held-list | release-held | drop-held |
   clear-merged`. Config `held_max_age_days` (default 14).
 - **`mnx_stage`** bulk profile + ingest-batch label (corpus ingest, DP8): `add` accepts
   `--ingest-batch <id>` (sets `bulk: true` + mirrors the label into provenance) plus the corpus-provenance
   flags `--source-repo/--commit-sha/--source-path/--anchor/--kind`; labeled atoms are counted under a
   **bulk** cap (`ingest_bulk_hard_atoms`, default 5000) and are exempt from the per-session soft/hard nag.
-  `status()` gains `session_count` + `by_label:{<batch>:n, _session:n}` (the per-session budget is over
+  `status()` reports `session_count` + `by_label:{<batch>:n, _session:n}` (the per-session budget is over
   SESSION atoms only). `list`/`overlay`/`clear` take `--ingest-batch <id>` (or `_session`); `clear
   --ingest-batch` drains only that batch, never the session atoms or another batch. Config
   `ingest_bulk_soft_atoms` (500) / `ingest_bulk_hard_atoms` (5000).

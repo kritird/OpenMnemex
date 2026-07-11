@@ -31,7 +31,7 @@ flowchart LR
     class G,R g;
 ```
 
-## 🏗️ Design goals (and the constraints they came from)
+## 🏗️ Design goals
 
 1. **No vectors, no server, no embedding pipeline.** Retrieval is *structural* — folder routing plus
    small index files read in chunks — not semantic search. This is a hard requirement: the cost of
@@ -81,15 +81,14 @@ flowchart TD
 > **You can bootstrap the whole graph from an existing repo — not just grow it session by session.**
 > [`mnx-ingest`](corpus-ingestion.md) reads an entire code/doc repository and **distills** its durable
 > knowledge — the facts, decisions, and API contracts a future agent will want — into the graph, collapsing
-> redundant restatements into one well-sourced node and wiring the `[[links]]` between them. Crucially, this
-> is **not** a second system bolted on: a live session is one producer of atoms, a corpus is a second, and
-> both converge on the **same** promote → mesh → consolidate backbone. So the day-one graph and the
-> hand-grown graph are the same shape — **no vectors, no server, no global index, no RAG.** That the thesis
-> holds unchanged for a cold corpus is the point, not a caveat.
+> redundant restatements into one well-sourced node and wiring the `[[links]]` between them. A live session
+> and a corpus are just two producers of atoms; both converge on the **same** promote → mesh → consolidate
+> backbone. The day-one graph and the hand-grown graph are the same shape — **no vectors, no server, no
+> global index, no RAG.**
 
-Wherever this subsystem reads state it is also mutating, consistency breaks subtly. The protocol
-forecloses that entire class with one principle: **snapshot-then-apply** — compute every decision
-against a frozen view, then apply.
+Where a subsystem reads the same state it is mutating, consistency breaks subtly. The protocol
+forecloses that with one principle: **snapshot-then-apply** — compute every decision against a
+frozen view, then apply.
 
 See [`architecture.md`](architecture.md) for the subsystem, and
 [`maintenance-pass-algorithm.md`](maintenance-pass-algorithm.md) for the principle in code-shape.

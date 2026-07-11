@@ -118,7 +118,7 @@ Each entry: the break, its mitigation, and the doc that owns the fix.
 ### 🏗️ Ingest invariants (corpus bootstrap — DP1–DP8)
 
 Bootstrapping the graph from an existing repo ([`corpus-ingestion.md`](corpus-ingestion.md)) inherits every
-invariant above and adds its own load-bearing set. Each is defended by a test named in the build plan.
+invariant above and adds its own load-bearing set.
 
 | DP | Invariant | Why it holds |
 |---|---|---|

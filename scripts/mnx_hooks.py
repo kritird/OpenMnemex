@@ -8,10 +8,14 @@ Subcommands (argv[1]):
                        no graph is configured, emit a one-time (durable, fires once ever) onboarding
                        notice pointing at /mnemex:mnx-init instead of staying silent. Stays silent if
                        the session is already muted.
-  opt-out / opt-in   : write / clear a per-session MUTE marker (argv: --session <id>). opt-out is how
-                       the agent honors "don't use Mnemex this session" — every other Mnemex hook
-                       checks the marker and goes silent, effectively dropping Mnemex for the session.
-                       Take no stdin; safe to run as a plain command.
+  opt-out / opt-in   : toggle the paired per-session MUTE + CONSENT markers (argv: --session <id>).
+                       opt-out (mute ON, consent OFF) is how the agent honors "don't use Mnemex this
+                       session" — every other Mnemex hook checks the mute marker and goes silent.
+                       opt-in (mute OFF, consent ON) records the user's "yes" and arms the per-prompt
+                       reminder below. Take no stdin; safe to run as a plain command.
+  user-prompt-submit : (UserPromptSubmit) once the user has consented (opt-in), inject a short
+                       read-before-domain-work / capture reminder on EVERY prompt. Silent when muted or
+                       when the consent question has not been answered yet (SessionStart owns the ask).
   stop               : when the agent wraps up a turn, batch-flush this turn's pending usage stamps
                        (mnx_stamp.flush; silent, advisory), then interrupt ONCE per session (or once
                        more per compaction — see pre-compact) to have it ask whether durable knowledge
@@ -158,16 +162,40 @@ def _is_muted(session_id: str) -> bool:
         return False
 
 
+def _consent_marker(session_id: str) -> Path:
+    """Per-session marker set when the user AGREES to Mnemex for this session (opt-in).
+
+    It is the positive counterpart to the mute marker: mute records 'no', consent records 'yes'.
+    Its presence is what arms the per-prompt UserPromptSubmit reminder — the hook injects the
+    read/capture context on every prompt only while this marker exists. Absent (and not muted)
+    means the user has not answered the session-start consent question yet, so the per-prompt
+    hook stays silent. Cleared at SessionEnd so the next session re-asks.
+    """
+    return _run_dir() / f"consented-{_safe_session(session_id)}"
+
+
+def _is_consented(session_id: str) -> bool:
+    try:
+        return _consent_marker(session_id).exists()
+    except Exception:
+        return False
+
+
 def _set_mute(session_id: str, on: bool) -> int:
-    """opt-out (on=True) / opt-in (on=False). Writes or clears the per-session mute marker.
+    """opt-out (on=True) / opt-in (on=False). Toggles the paired mute + consent markers.
+
+    opt-out  -> mute ON,  consent OFF (user declined; every hook goes silent).
+    opt-in   -> mute OFF, consent ON  (user agreed; arms the per-prompt read reminder).
     Reads no stdin and never raises — the agent runs it as a plain command."""
-    m = _mute_marker(session_id)
+    m, c = _mute_marker(session_id), _consent_marker(session_id)
     try:
         m.parent.mkdir(parents=True, exist_ok=True)
         if on:
             m.write_text("muted", encoding="utf-8")
+            c.unlink(missing_ok=True)
         else:
             m.unlink(missing_ok=True)
+            c.write_text("consented", encoding="utf-8")
     except Exception:
         pass
     print(json.dumps({"mnemex": "muted" if on else "active", "session": session_id}))
@@ -254,18 +282,24 @@ def session_start() -> int:
     lines = [f"Mnemex: {status} ({label})"]
     if available:
         team = f" (default team: {binding.default_team})" if binding.default_team else ""
-        mute_cmd = (f'python3 "${{CLAUDE_PLUGIN_ROOT}}/scripts/mnx_hooks.py" opt-out --session {sid}')
+        base = f'python3 "${{CLAUDE_PLUGIN_ROOT}}/scripts/mnx_hooks.py"'
+        optin_cmd = f"{base} opt-in --session {sid}"
+        mute_cmd = f"{base} opt-out --session {sid}"
         lines.append(
             "A Mnemex knowledge graph is available" + team + ". Get the user's consent ONCE, up front, "
             "before doing domain work this session — ask plainly whether they want you to use Mnemex "
             "memory for this session.\n"
-            "  • If YES — before working on a task in a domain it may cover, load prior knowledge first "
-            "with the mnx-read skill (or /mnemex:mnx-read); if the session produces durable knowledge or "
-            "human review decisions, stage it before the end with /mnemex:mnx-capture (cheap + local). "
+            "  • If YES — record the consent by running this once:\n"
+            f"      {optin_cmd}\n"
+            "    From then on a per-prompt reminder keeps the read/capture routing in front of you: "
+            "before working on a task in a domain it may cover, load prior knowledge first with the "
+            "mnx-read skill (or /mnemex:mnx-read); if the session produces durable knowledge or human "
+            "review decisions, stage it before the end with /mnemex:mnx-capture (cheap + local). "
             "Merging staged captures into the shared graph is the separate, deliberate "
             "/mnemex:mnx-promote step — do NOT auto-run it.\n"
             "  • If NO / not now — do NOT use any Mnemex skill this session, and silence further Mnemex "
-            "prompts (the end-of-session capture reminder) by running this once:\n"
+            "prompts (the per-prompt reminder and the end-of-session capture reminder) by running this "
+            "once:\n"
             f"      {mute_cmd}\n"
             "    After muting, do not bring Mnemex up again unless the user explicitly asks for it."
         )
@@ -274,6 +308,34 @@ def session_start() -> int:
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": "\n".join(lines),
+        }
+    }))
+    return 0
+
+
+def user_prompt_submit() -> int:
+    """(UserPromptSubmit) once the user has CONSENTED, inject a short read/capture reminder on every
+    prompt. Silent otherwise: muted (user said no) or not-yet-answered (no consent marker) both no-op,
+    and it stays silent when no graph is bound. This is the per-turn counterpart to the one-time
+    SessionStart primer — consent is asked once, then this keeps the routing in front of the agent.
+    """
+    event = _read_event()
+    sid = str(event.get("session_id", ""))
+    if _is_muted(sid) or not _is_consented(sid):
+        return 0  # user declined, or has not agreed yet — the SessionStart primer owns the ask
+    binding = mnx_binding.resolve()
+    if binding is None:
+        return 0  # no graph bound here — nothing to route to
+    reminder = (
+        "Mnemex is active for this session. Before working on a task in a domain the graph may cover, "
+        "load prior knowledge first with the mnx-read skill (or /mnemex:mnx-read). If this turn produces "
+        "durable knowledge or review decisions, stage it with /mnemex:mnx-capture (cheap + local; do NOT "
+        "auto-promote)."
+    )
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": reminder,
         }
     }))
     return 0
@@ -377,7 +439,7 @@ def session_end() -> int:
     event = _read_event()
     sid = str(event.get("session_id", ""))
     muted = _is_muted(sid)
-    for marker in (_stop_marker(sid), _mute_marker(sid), _compaction_marker(sid)):
+    for marker in (_stop_marker(sid), _mute_marker(sid), _consent_marker(sid), _compaction_marker(sid)):
         try:  # tidy per-session markers so the next session re-asks consent / re-nudges
             marker.unlink(missing_ok=True)
         except Exception:
@@ -544,6 +606,8 @@ def main(argv: list[str]) -> int:
             return _set_mute(_session_arg(argv), False)
         if cmd == "session-start":
             return session_start()
+        if cmd == "user-prompt-submit":
+            return user_prompt_submit()
         if cmd == "stop":
             return stop()
         if cmd == "pre-compact":

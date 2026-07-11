@@ -56,12 +56,10 @@ access. No background sweep, no write amplification, no decay loop.
 > upward without bound until no realistic amount of decay can ever demote it — an **immortal node** that
 > defeats the entire forgetting model.
 
-The `min(STRENGTH_MAX, …)` is load-bearing. Without it, a daily-used node ratchets `strength` upward
-without bound until no realistic amount of decay can ever demote it — it becomes immortal and defeats
-the entire forgetting model. Saturation caps a node at “fully hot,” and from there decay still governs
-it. Equivalently you may use a **diminishing boost** `boost(r) · (1 − strength/STRENGTH_MAX)`. Nodes
-that *should* be sticky (foundational hubs) are kept sticky through **structural strength** (§5), which
-is reasoned about deterministically, never through a runaway usage counter.
+Saturation caps a node at “fully hot,” and from there decay still governs it. Equivalently you may use
+a **diminishing boost** `boost(r) · (1 − strength/STRENGTH_MAX)`. Nodes that *should* be sticky
+(foundational hubs) are kept sticky through **structural strength** (§5), which is reasoned about
+deterministically, never through a runaway usage counter.
 
 ---
 
@@ -298,19 +296,18 @@ the same guarantee.
 
 ## 1️⃣3️⃣ Corpus ingestion — bootstrap a graph from a whole repo (a source adapter, not a subsystem)
 
-Mnemex can build a graph from an existing **code or documentation repository** in one command
+Mnemex builds a graph from an existing **code or documentation repository** in one command
 ([`corpus-ingestion.md`](corpus-ingestion.md)) — turning a monorepo's worth of docs, ADRs, API contracts,
-and code comments into a live, connected graph without a single interactive session. The architecturally
-important part is **how little new machinery this takes**: a live session is one producer of staged atoms;
-a **corpus** is a second, and both converge on the same backbone.
+and code comments into a live, connected graph without a single interactive session. A corpus is just a
+second producer of staged atoms alongside a live session, and both converge on the same backbone.
 
-`mnx-ingest` adds only a deterministic *front-end* — walk → classify → chunk → distill → wikify → stage a
-labeled bulk batch — plus a scale-adapted `mnx-promote --bulk` and a delta manifest. Everything downstream
-(reconcile, MERGE/SUPERSEDE, contradiction HITL, the wiki mesh, consolidate, doctor, push) is the
-**existing** pipeline, reused unchanged, and `mnx-promote` stays the sole writer. The two hard problems a
-cold corpus adds — **scale** (two gates, never per-atom review) and **redundancy** (the same fact stated
-five ways) — are absorbed by an **ingest-scoped** GraphRAG-derived layer: entity resolution collapses each
+`mnx-ingest` is a deterministic *front-end* — walk → classify → chunk → distill → wikify → stage a
+labeled bulk batch — feeding a scale-adapted `mnx-promote --bulk` and a delta manifest. Everything
+downstream (reconcile, MERGE/SUPERSEDE, contradiction HITL, the wiki mesh, consolidate, doctor, push) is
+the same pipeline a live session uses, and `mnx-promote` remains the sole writer. The two hard problems a
+cold corpus poses — **scale** (two gates, never per-atom review) and **redundancy** (the same fact stated
+five ways) — are handled by an **ingest-scoped** GraphRAG-derived layer: entity resolution collapses each
 entity to one well-sourced node, a two-pass catalog keeps the `[[links]]` globally consistent, and optional
 Leiden may only *propose* a folder map at gate #1. Episodic capture needs none of that (it mines a lived
-transcript), so the one shared technique is *gleaning*. The whole feature holds the line: **no vectors, no
+transcript), so the one shared technique is *gleaning*. The feature holds the line: **no vectors, no
 server, no global index, no read-time clustering** — a distilled graph, not a RAG index over your source.

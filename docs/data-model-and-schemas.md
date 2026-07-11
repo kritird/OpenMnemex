@@ -294,7 +294,7 @@ over-budget body into sibling pages + a link (capture never splits or resolves).
 
 An atom staged by [`mnx-ingest`](corpus-ingestion.md) instead of a live session carries a **source-anchored
 provenance** (self-sufficient to reconcile *cold* and to diff on re-run) plus a top-level **`ingest_batch`
-label** (which sets `bulk: true`, partitioning it from hand-captures — DP8):
+label** (which sets `bulk: true`, partitioning it from hand-captures):
 
 ```yaml
 ingest_batch: ing-2026-07-11-a1b2   # top-level label → sets bulk: true; drained by mnx-promote --bulk

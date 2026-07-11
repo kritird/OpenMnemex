@@ -35,8 +35,6 @@ journey
       Graph consolidates + forgets: 5: Skill
 ```
 
-The rest of this document expands each band, in order.
-
 ---
 
 ## 1️⃣ Stage one — Installation (once per machine)
@@ -68,9 +66,8 @@ pip install pyyaml
 | `/plugin install mnemex@…` | 🟣 command | Installs the skills, slash commands, and hooks. |
 
 > [!NOTE]
-> After install, the **skills** and **commands** are live immediately. The **hooks** (`hooks/hooks.json`)
-> take effect after `/reload-plugins` or a restart — a one-time lifecycle detail noted in
-> [`skills-commands-hooks.md`](skills-commands-hooks.md).
+> The **skills** and **commands** are live immediately after install. The **hooks** (`hooks/hooks.json`)
+> take effect after `/reload-plugins` or a restart — see [`skills-commands-hooks.md`](skills-commands-hooks.md).
 
 ---
 
@@ -271,9 +268,9 @@ flowchart TD
 
 > [!WARNING]
 > 🧯 Promote disposes **per-atom**: every clean atom reaches a terminal disposition and clears **only** on
-> a confirmed persist; a **contradiction** is a hard human block — resolve it in-cycle or **hold** that
-> atom in the local queue (the rest still promotes), or abort the whole promote. Held state is purely
-> local — there is no half-merged limbo on the graph. Full contract: [`staging-and-promotion.md`](staging-and-promotion.md).
+> a confirmed persist. A **contradiction** is a hard human block — resolve it in-cycle, **hold** that atom
+> in the local queue (the rest still promotes), or abort the whole promote. Held state is purely local, so
+> there is no half-merged limbo on the graph. Full contract: [`staging-and-promotion.md`](staging-and-promotion.md).
 
 ---
 

@@ -1,11 +1,10 @@
 # 🧭 Multi-Graph, Bindings & Team Routing
 
-> Part of the **Mnemex Context Graph** standard. This document answers a question the other docs only
-> touch in pieces: **when an author works across several repos — each bound to a different graph, plus a
-> personal local graph, and a team within an org — how do `init`, `read`, `capture`, and `promote` know
-> *which graph* and *which team* to write to?** It ties [`binding-and-graph-sync.md`](binding-and-graph-sync.md)
-> (which graph) and [`staging-and-promotion.md`](staging-and-promotion.md) (capture/promote) together
-> into one end-to-end mental model.
+> Part of the **Mnemex Context Graph** standard. When an author works across several repos — each bound to a
+> different graph, plus a personal local graph, and a team within an org — how do `init`, `read`, `capture`,
+> and `promote` know *which graph* and *which team* to write to? This doc ties
+> [`binding-and-graph-sync.md`](binding-and-graph-sync.md) (which graph) and
+> [`staging-and-promotion.md`](staging-and-promotion.md) (capture/promote) into one mental model.
 
 ---
 
@@ -159,9 +158,8 @@ flowchart LR
 
 ## 4️⃣ Worked example — three graphs captured, never promoted
 
-This is the scenario the design is built to make safe. You worked across three contexts this week and
-captured in each, but never promoted. Because staging is **per-graph**, you do not have one mixed pile —
-you have **three separate staging stores**:
+You captured across three contexts but never promoted. Because staging is **per-graph**, you do not have one
+mixed pile — you have **three separate staging stores**:
 
 ```mermaid
 flowchart TD
@@ -204,11 +202,10 @@ Within each run, team selection then proceeds as in §2: `domain` key → org/te
 
 ## 5️⃣ When no graph exists yet — what `init` creates first
 
-`mnx-init`'s **create-a-new-graph** mode scaffolds a graph. The **defining first artifact is
-`mnemex.config.md`**, because that one file is *what makes a directory a graph*: `find_graph_root()`
-identifies a graph root purely by the presence of `mnemex.config.md`. Until it exists, there is no graph
-and every skill's `require_graph_root` fails; write it, and the folder *becomes* a graph. It doubles as the
-home of the behavior config (half-life, tiers, `pattern_halflife_bonus`).
+`mnx-init`'s **create-a-new-graph** mode scaffolds a graph. The defining first artifact is
+`mnemex.config.md`: `find_graph_root()` identifies a graph root purely by the presence of this file. Until
+it exists there is no graph and every skill's `require_graph_root` fails; write it, and the folder becomes a
+graph. It also holds the behavior config (half-life, tiers, `pattern_halflife_bonus`).
 
 ```mermaid
 flowchart TD
@@ -223,10 +220,9 @@ flowchart TD
     class IDX,ST,GI,TEAM rest;
 ```
 
-Deliberately **not** created yet: any **node files** (a fresh graph holds zero knowledge — nodes appear only
-when your first `mnx-promote` drains staged atoms), and the **binding** itself (written as a separate step, so
-a graph can exist before anyone points at it). Full scaffold contract:
-[`binding-and-graph-sync.md`](binding-and-graph-sync.md) §Init flow.
+Not created yet: any **node files** (a fresh graph holds zero knowledge — nodes appear only when your first
+`mnx-promote` drains staged atoms), and the **binding** itself (a separate step, so a graph can exist before
+anyone points at it). Full scaffold contract: [`binding-and-graph-sync.md`](binding-and-graph-sync.md).
 
 ---
 

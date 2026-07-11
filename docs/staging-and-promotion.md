@@ -152,7 +152,7 @@ serially); (2) the approval plan collapses to **per-cluster counts**, surfacing 
 per drained batch over a frozen view** (snapshot-then-apply), not once at the end over a moving target; and
 (4) on confirmed persist it writes the ingest manifest (`source_path@commit → node_ids`) so re-ingest stays
 idempotent. Everything else — link reconciliation (Step 2b), red-link backfill, kind-aware persist — is
-the existing promote, unchanged.
+the same promote flow.
 
 ## 🧹 Reviewing and discarding staged atoms
 
@@ -280,7 +280,7 @@ Session start syncs to HEAD and emits **one-line nags** — staged-pending (shar
 with any `urgent`), a **held-contradiction lingering** past `held_max_age_days`, and consolidation-overdue
 — and **never auto-runs** capture, promote, or consolidate
 (HITL intrusion + violates deliberate-promote; read's tail-fold keeps routing correct meanwhile). Read
-stamps keep their **session-end batched flush** (one batched append + push per session), unchanged.
+stamps use a **session-end batched flush** (one batched append + push per session).
 
 ## ⛓️ Cross-cutting invariants
 

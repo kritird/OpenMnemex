@@ -4,8 +4,7 @@ Mnemex ships **seven user-facing skills** (the agent-facing playbooks — `mnx-r
 `mnx-promote`, `mnx-doctor`, `mnx-init`, `mnx-status`, and `mnx-config`) plus one **internal** skill
 (`mnx-consolidate`, the maintenance pass invoked by `mnx-promote` — no slash command), **seven commands**
 (the slash-command surface), and a small set of **hooks** (deterministic event handlers that do what a
-skill cannot). This
-document gives the phase breakdown for each. The authoritative skill text lives in `skills/<name>/SKILL.md`;
+skill cannot). The authoritative skill text lives in `skills/<name>/SKILL.md`;
 the command stubs in `commands/`; the hooks in `hooks/hooks.json`.
 
 Knowledge writing is split **capture / promote** (the `git commit` vs `git push`/PR of memory): see
@@ -267,7 +266,9 @@ sequenceDiagram
     Note over H: ▶️ SessionStart
     H->>G: sync (clone / resync to HEAD)
     H->>A: consent primer — "use Mnemex this session?"
-    U->>A: yes / no (no → opt-out mutes session)
+    U->>A: yes (→ opt-in) / no (→ opt-out mutes session)
+    Note over H: 💬 UserPromptSubmit (every prompt, once consented)
+    H->>A: read/capture reminder (silent unless consented)
     A->>G: 🔍 mnx-read before domain tasks
     Note over H: 🗜️ PreCompact (transcript about to be summarized)
     H->>H: re-arm the capture nudge · flush stamps
@@ -281,12 +282,13 @@ sequenceDiagram
 
 | Hook event | Purpose | Why a hook, not a skill |
 |---|---|---|
-| **SessionStart** *(implemented)* | Resolve the binding and **sync the graph** (blocking — clone/resync a remote, verify a local folder), then inject a **consent primer**: the sync status plus an instruction to ask the user ONCE, up front, whether to use Mnemex this session — if yes, `mnx-read` before domain tasks and `mnx-capture` to stage knowledge; if no, run `opt-out` (the command is handed over with this session's id baked in) so Mnemex goes silent for the session. Also emits **nag-only** lines for staged-pending / consolidation-overdue (never auto-runs). If no graph is bound, emit a **one-time onboarding notice** (fires once ever) pointing at `/mnemex:mnx-init`. Silent if the session is already muted. | Sync must be guaranteed before any skill runs; asking once at turn zero sets read context on consent and lets the user drop Mnemex for the session in one move, instead of being nudged every turn. |
-| **Stop** *(implemented)* | When the agent wraps up a turn, batch-flush this turn's usage stamps, then **block once per session** (and **once more after each compaction** — see PreCompact) with a reason that has it ask the user whether durable knowledge should be staged with `/mnemex:mnx-capture`. Loop-safe (a per-session marker plus `stop_hook_active` prevent re-nudging); the reason sharpens to "stage the delta from the window that was just summarized" when a compaction re-armed it; **no-op when the session is muted**; never auto-writes. | Fires while the session is still live, so unlike SessionEnd it can hand the agent a turn to actually ask the user. |
-| **PreCompact** *(implemented)* | Fires right before the transcript is summarized — the one moment session detail is actually **lost**. PreCompact cannot inject context or block, so it **re-arms the Stop capture nudge** (clears the once-per-session marker and records the compaction) so the next Stop re-asks the agent to stage the **delta** from the compacted window, and best-effort flushes pending stamps. **No-op when muted**; never auto-writes. | Ties re-nudging to a real transcript-loss event rather than a timer; guaranteed to fire exactly at the moment uncaptured knowledge is at risk, which a skill would miss. |
-| **SessionEnd** *(implemented)* | Flush any pending usage stamps, then **prompt** to stage durable knowledge with `/mnemex:mnx-capture` and emit staged-pending / consolidation-overdue nags (advisory; never auto-writes, never auto-promotes). Tidies the session's stop-nudge and mute markers so the next session re-asks consent. **No-op when muted.** | A reliable end-of-session nudge the model might otherwise skip, plus per-session marker cleanup. |
-| **PreToolUse** (Bash) *(implemented)* | If the pending command is a `git commit` **inside the bound graph repo**, run `mnx_doctor.check` and **deny** the commit on error-level findings, so a structurally broken graph cannot be committed. Scoped to the graph repo only — a commit in the author's project repo is never touched — and **fails open** on any internal error. | A skill can be skipped; a gate must be deterministic. |
-| **PostToolUse** (Bash) *(implemented)* | After a Mnemex mutation command (matched on `mnx_`/`mnemex` in the command), surface a stranded `pass.plan.json` / unreleased team lock — a crashed `gc`/`write` — with the recommended recovery (rollback vs. replay). Advisory; never blocks. | Cleanup must run regardless of model attention. |
+| **SessionStart** | Resolve the binding and **sync the graph** (blocking — clone/resync a remote, verify a local folder), then inject a **consent primer**: the sync status plus an instruction to ask the user ONCE, up front, whether to use Mnemex this session — if yes, run `opt-in` (records consent, which arms the per-prompt reminder) then `mnx-read` before domain tasks and `mnx-capture` to stage knowledge; if no, run `opt-out` (the command is handed over with this session's id baked in) so Mnemex goes silent for the session. Also emits **nag-only** lines for staged-pending / consolidation-overdue (never auto-runs). If no graph is bound, emit a **one-time onboarding notice** (fires once ever) pointing at `/mnemex:mnx-init`. Silent if the session is already muted. | Sync must be guaranteed before any skill runs; asking once at turn zero sets read context on consent and lets the user drop Mnemex for the session in one move, instead of being nudged every turn. |
+| **UserPromptSubmit** | Once the user has **consented** (opt-in recorded a per-session consent marker), inject a short **read-before-domain-work / capture reminder on every prompt**, so the routing stays in front of the agent across a long session. **No-op** when muted or when the consent question has not been answered yet (the SessionStart primer owns the one-time ask), and when no graph is bound. | Consent is asked once; this keeps the read/capture routing live per turn without re-asking — the counterpart to the one-time SessionStart primer, gated on an explicit yes. |
+| **Stop** | When the agent wraps up a turn, batch-flush this turn's usage stamps, then **block once per session** (and **once more after each compaction** — see PreCompact) with a reason that has it ask the user whether durable knowledge should be staged with `/mnemex:mnx-capture`. Loop-safe (a per-session marker plus `stop_hook_active` prevent re-nudging); the reason sharpens to "stage the delta from the window that was just summarized" when a compaction re-armed it; **no-op when the session is muted**; never auto-writes. | Fires while the session is still live, so unlike SessionEnd it can hand the agent a turn to actually ask the user. |
+| **PreCompact** | Fires right before the transcript is summarized — the one moment session detail is actually **lost**. PreCompact cannot inject context or block, so it **re-arms the Stop capture nudge** (clears the once-per-session marker and records the compaction) so the next Stop re-asks the agent to stage the **delta** from the compacted window, and best-effort flushes pending stamps. **No-op when muted**; never auto-writes. | Ties re-nudging to a real transcript-loss event rather than a timer; guaranteed to fire exactly at the moment uncaptured knowledge is at risk, which a skill would miss. |
+| **SessionEnd** | Flush any pending usage stamps, then **prompt** to stage durable knowledge with `/mnemex:mnx-capture` and emit staged-pending / consolidation-overdue nags (advisory; never auto-writes, never auto-promotes). Tidies the session's stop-nudge, mute, and consent markers so the next session re-asks consent. **No-op when muted.** | A reliable end-of-session nudge the model might otherwise skip, plus per-session marker cleanup. |
+| **PreToolUse** (Bash) | If the pending command is a `git commit` **inside the bound graph repo**, run `mnx_doctor.check` and **deny** the commit on error-level findings, so a structurally broken graph cannot be committed. Scoped to the graph repo only — a commit in the author's project repo is never touched — and **fails open** on any internal error. | A skill can be skipped; a gate must be deterministic. |
+| **PostToolUse** (Bash) | After a Mnemex mutation command (matched on `mnx_`/`mnemex` in the command), surface a stranded `pass.plan.json` / unreleased team lock — a crashed `gc`/`write` — with the recommended recovery (rollback vs. replay). Advisory; never blocks. | Cleanup must run regardless of model attention. |
 
 These hooks are **safe**: they sync, warn, prompt, or gate — they never mutate knowledge on their own.
 With the single exception of the PreToolUse commit **deny**, they are advisory; every hook exits cleanly
@@ -295,10 +297,14 @@ are deliberately narrow — PreToolUse only acts on a `git commit` whose effecti
 repo, and PostToolUse only scans when the command references Mnemex — so neither taxes ordinary Bash use.
 Note: the primary read trigger remains the agent invoking `mnx-read` (by skill description or the
 SessionStart consent primer) or an author composing it into their own skill — no hook auto-runs a skill.
-Consent is captured once at session start: on **yes** the agent reads/writes as needed; on **no** it runs
-`mnx_hooks.py opt-out --session <id>`, which sets a per-session mute marker that SessionStart, Stop,
-PreCompact, and SessionEnd all honor — effectively dropping Mnemex for the session without unregistering the skills (the
-user can still invoke `/mnemex:*` explicitly, or `opt-in` to re-enable). The marker is cleared at
+Consent is captured once at session start via two paired markers. On **yes** the agent runs
+`mnx_hooks.py opt-in --session <id>`, which sets a per-session **consent** marker that arms the
+UserPromptSubmit reminder (a short read/capture nudge injected on every prompt for the rest of the
+session). On **no** it runs `mnx_hooks.py opt-out --session <id>`, which sets a per-session **mute**
+marker that UserPromptSubmit, SessionStart, Stop, PreCompact, and SessionEnd all honor — effectively
+dropping Mnemex for the session without unregistering the skills (the user can still invoke `/mnemex:*`
+explicitly). opt-in/opt-out are inverses: each sets its own marker and clears the other. Until the user
+answers, neither marker exists, so the per-prompt reminder stays silent. Both markers are cleared at
 SessionEnd, so the next session asks again.
 
 > **Lifecycle note:** changes to a `SKILL.md` take effect immediately; changes to `hooks/`, `.mcp.json`,
