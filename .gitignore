@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
+# Packaging build artifacts (pip/setuptools)
+build/
+dist/
+*.egg-info/
+
 # Mnemex runtime state that should NOT be versioned in the PLUGIN repo.
 # (In a KNOWLEDGE repo you may choose to commit highwater/ and config_version
 #  for reproducibility, but the transient locks/plans are always ignored.)
@@ -15,6 +20,7 @@ pytest.ini
 # Personal working notes / todo (not part of the published repo)
 LIMITATIONS.md
 docs/multi-agent-build-plan.md
+docs/multi-agent-build-plan-v2.md
 
 # OS
 .DS_Store
