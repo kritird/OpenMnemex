@@ -17,6 +17,26 @@ is the schema, the defaults, and the rules around changing values.
 
 ---
 
+## 📂 Where user-level state lives (the mnemex home)
+
+Everything per-author and per-machine — the user config (`config.md`), graph clones (`graphs/`),
+capture staging + stamp spill (`staging/`), hook run markers (`run/`), and the ingest cache
+(`ingest-cache/`) — lives under one **mnemex home** directory, resolved by
+`mnx_common.mnemex_home()` with this precedence (first hit wins):
+
+1. **`$MNEMEX_HOME`** — explicit override; works identically under every agent host.
+2. **`$CLAUDE_CONFIG_DIR/mnemex`** — respected when Claude Code runs with a relocated config dir.
+3. **`~/.claude/mnemex`** *if it already exists* — back-compat: installs created before the
+   multi-agent work keep their state exactly where it is, untouched.
+4. **`$XDG_DATA_HOME/mnemex`** (default `~/.local/share/mnemex`) — fresh installs; agent-neutral,
+   so state staged under one agent (Claude Code, an MCP client, …) is visible to all the others.
+
+Resolution never creates directories; the location materializes on first write. The one
+deliberately separate override is `$MNEMEX_INGEST_CACHE`, which relocates only the ingest clone
+cache (it can get large and is safe to delete).
+
+---
+
 ## ⚙️ Schema and defaults
 
 ```yaml
@@ -74,7 +94,7 @@ er_possible_threshold: 0.60       # [possible, match) → the HITL "⚠ suggeste
                                   #   ONLY here; below possible → distinct). Fixed thresholds with override.
 code_extract: gated               # gated | deep | off — the code value-gate: gated stages only public /
                                   #   documented / config-only symbols (per-subtree overridable at gate #1).
-# max_glean_passes: 2             # in USER config (~/.claude/mnemex/config.md), not here — the glean
+# max_glean_passes: 2             # in USER config (<mnemex home>/config.md), not here — the glean
                                   #   recall loop is shared with episodic capture. Bounds passes; default 2.
 ```
 

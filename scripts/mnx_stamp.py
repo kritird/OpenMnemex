@@ -7,7 +7,7 @@ git-remote graph the local clone is hard-reset to origin/HEAD every session star
 (mnx_binding.sync), so a stamp written straight to the registry dies unless it is
 committed AND pushed. To make stamping durable and quiet, remote stamps are written
 to a session-durable SPILL outside the clone (co-located with capture staging atoms under
-~/.claude/mnemex/staging/<graph-slug>/, see docs/11) and flushed to the registry + pushed
+<mnemex home>/staging/<graph-slug>/ — mnx_common.mnemex_home(), see docs/11) and flushed to the registry + pushed
 in one batch at end of turn / session (mnx_hooks stop / session-end).
 
 Invariant: the spill is the source of truth for un-pushed stamps; the registry is

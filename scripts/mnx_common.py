@@ -45,6 +45,37 @@ def _require_yaml() -> None:
         raise RuntimeError("PyYAML is required for Mnemex (pip install pyyaml).")
 
 
+# --- user-level home ---------------------------------------------------------
+
+def mnemex_home() -> Path:
+    """User-level Mnemex state root: config.md, graph clones, staging, run markers, caches.
+
+    Durable across plugin/package updates and shared by every agent host (Claude Code, MCP
+    clients, …) so captures staged under one agent are visible to all the others.
+
+    Resolution precedence (first hit wins; documented in docs/configuration.md):
+      1. $MNEMEX_HOME                      — explicit override, agent-agnostic
+      2. $CLAUDE_CONFIG_DIR/mnemex         — Claude Code with a relocated config dir
+      3. ~/.claude/mnemex  IF IT EXISTS    — back-compat: existing installs stay untouched
+      4. $XDG_DATA_HOME/mnemex (default ~/.local/share/mnemex) — fresh installs, agent-neutral
+
+    Resolution is side-effect-free: this never creates a directory — writers mkdir what
+    they need, so the fresh-install location only materializes on first write.
+    """
+    env = os.environ.get("MNEMEX_HOME")
+    if env:
+        return Path(env).expanduser()
+    claude_cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    if claude_cfg:
+        return Path(claude_cfg).expanduser() / "mnemex"
+    legacy = Path.home() / ".claude" / "mnemex"
+    if legacy.is_dir():
+        return legacy
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
+    return base / "mnemex"
+
+
 # --- time -------------------------------------------------------------------
 
 def now_utc() -> str:

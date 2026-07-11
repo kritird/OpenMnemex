@@ -55,6 +55,7 @@ import sys
 from pathlib import Path
 
 import mnx_binding
+import mnx_common
 import mnx_stamp
 
 
@@ -110,7 +111,6 @@ def _session_nags(binding) -> list[str]:
 
 
 def mnx_common_now() -> str:
-    import mnx_common
     return mnx_common.now_utc()
 
 
@@ -123,7 +123,7 @@ def _read_event() -> dict:
 
 
 def _run_dir() -> Path:
-    return mnx_binding.claude_home() / "mnemex" / "run"
+    return mnx_common.mnemex_home() / "run"
 
 
 def _safe_session(session_id: str) -> str:
@@ -204,7 +204,7 @@ def _set_mute(session_id: str, on: bool) -> int:
 
 def _onboarded_marker() -> Path:
     """One-time marker so the 'no graph configured' onboarding notice fires once, ever."""
-    return mnx_binding.claude_home() / "mnemex" / "run" / "onboarded"
+    return _run_dir() / "onboarded"
 
 
 def _graph_label(binding) -> str:

@@ -7,8 +7,9 @@ locally, with no lock and no graph mutation. `mnx-promote` later reconciles + me
 staging batch into the shared graph and clears it. This helper owns the staging substrate:
 
   * one folder per graph, keyed by the graph slug, under
-        ~/.claude/mnemex/staging/<graph-slug>/atoms/<provisional-id>.md
-    (co-located with the read-stamp spill — see mnx_stamp). It lives OUTSIDE the graph clone so
+        <mnemex home>/staging/<graph-slug>/atoms/<provisional-id>.md
+    (home resolved by mnx_common.mnemex_home(): ~/.claude/mnemex on existing installs, XDG on
+    fresh ones; co-located with the read-stamp spill — see mnx_stamp). It lives OUTSIDE the graph clone so
     a remote clone's session-start hard-resync never destroys un-promoted captures, and it is
     NOT part of the shared graph (staging is per-author/local, never pushed).
   * provisional ids: a content hash (`stg-<sha1[:12]>`). They must NEVER enter the real graph's

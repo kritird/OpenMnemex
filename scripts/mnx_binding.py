@@ -15,7 +15,8 @@ stdlib + PyYAML only. See docs/binding-and-graph-sync.md and docs/script-contrac
 Resolution precedence (most specific wins); within a source, graph_path beats graph_remote:
     1. <project>/.mnemex.md         (nearest ancestor of cwd)
     2. $MNEMEX_GRAPH_PATH / $MNEMEX_GRAPH_REMOTE (+ peers)
-    3. ~/.claude/mnemex/config.md   (user default)
+    3. <mnemex home>/config.md      (user default; home resolved by mnx_common.mnemex_home()
+                                     — ~/.claude/mnemex on existing installs, XDG on fresh ones)
     4. none -> caller must run /mnemex:mnx-init
 
 CLI (each subcommand emits one JSON object on stdout):
@@ -41,6 +42,8 @@ try:
 except ImportError:  # pragma: no cover - dependency is declared in README
     yaml = None
 
+import mnx_common
+
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_UNRESOLVED = 2
@@ -60,16 +63,17 @@ _ENV = {
 # --- paths ------------------------------------------------------------------
 
 def claude_home() -> Path:
-    """User-level config root. Durable across plugin updates (NOT the plugin dir)."""
+    """Claude Code's user config root. Kept only as the back-compat input to
+    mnx_common.mnemex_home(); new code resolves state paths through mnemex_home()."""
     return Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 
 
 def user_config_path() -> Path:
-    return claude_home() / "mnemex" / "config.md"
+    return mnx_common.mnemex_home() / "config.md"
 
 
 def graphs_cache_root() -> Path:
-    return claude_home() / "mnemex" / "graphs"
+    return mnx_common.mnemex_home() / "graphs"
 
 
 def staging_cache_root() -> Path:
@@ -77,7 +81,7 @@ def staging_cache_root() -> Path:
 
     These are per-author and live OUTSIDE the graph clone so they survive the session-start
     hard-resync of a remote clone. NOT part of the shared graph — see docs/11."""
-    return claude_home() / "mnemex" / "staging"
+    return mnx_common.mnemex_home() / "staging"
 
 
 def slug_for_remote(remote: str) -> str:

@@ -345,7 +345,7 @@ def acquire(source: str, cache: Optional[str] = None) -> dict[str, Any]:
     mutates the source working tree; the graph is untouched."""
     if _looks_remote(source):
         cache_dir = Path(cache) if cache else Path(
-            os.environ.get("MNEMEX_INGEST_CACHE", Path.home() / ".claude" / "mnemex" / "ingest-cache"))
+            os.environ.get("MNEMEX_INGEST_CACHE") or mnx_common.mnemex_home() / "ingest-cache")
         slug = source_slug(source)
         dest = cache_dir / slug
         if not (dest / ".git").is_dir():
