@@ -76,6 +76,22 @@ def mnemex_home() -> Path:
     return base / "mnemex"
 
 
+def plugin_root() -> Path:
+    """The engine directory — the folder holding the mnx_*.py modules themselves.
+
+    Precedence: $MNEMEX_ROOT (explicit override, may point at either the engine dir or a
+    checkout root containing scripts/ — both normalize to the engine dir) → this file's own
+    resolved location. Self-location is authoritative so a pip-installed engine never mixes
+    with a plugin checkout; the literal ``${CLAUDE_PLUGIN_ROOT}`` reference survives only in
+    the generated hook commands (hooks/hooks.json, mnx_hooks) where Claude Code expands it.
+    """
+    val = os.environ.get("MNEMEX_ROOT")
+    if val:
+        p = Path(val).expanduser()
+        return p / "scripts" if (p / "scripts" / "mnx_common.py").is_file() else p
+    return Path(__file__).resolve().parent
+
+
 # --- time -------------------------------------------------------------------
 
 def now_utc() -> str:

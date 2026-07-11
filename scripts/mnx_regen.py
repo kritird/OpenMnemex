@@ -146,8 +146,7 @@ def install(repo: str = ".") -> dict:
     each clone must register once — so this is also what a fresh clone / mnx-init runs, and what
     the doctor checks.
     """
-    plugin_root = Path(__file__).resolve().parent
-    cmd = (f'python3 "{plugin_root / "mnx_regen.py"}" merge %O %A %B %P')
+    cmd = (f'python3 "{mnx_common.plugin_root() / "mnx_regen.py"}" merge %O %A %B %P')
     calls = [
         ["git", "-C", repo, "config", "merge.mnx-regen.name",
          "Mnemex: regenerate derived files from truth"],
