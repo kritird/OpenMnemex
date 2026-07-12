@@ -88,10 +88,15 @@ def plan_links(notes: list[dict[str, Any]], team: str) -> dict[str, Any]:
                 key = (nid, _norm(to))
                 if key not in seen_link:
                     seen_link.add(key)
-                    link = {"source_id": nid, "to": to, "type": ltype, "origin": origin}
+                    # Always carry the body's surface form: apply mirrors it into mentions[].name,
+                    # and doctor inv-22 requires every mention to trace back to a body [[link]].
+                    # Without it apply falls back to the target id — a phantom whenever the link
+                    # resolved via an alias that differs from the id (E2E 2026-07-12, finding G12:
+                    # [[on-ledger escrow]] resolved to on-ledger-holds left a phantom mention).
+                    link = {"source_id": nid, "to": to, "type": ltype, "origin": origin,
+                            "name": name}
                     if origin == "supersede-repoint":
                         link["forwarded_from"] = r.get("forwarded_from") or name
-                        link["name"] = name
                     links.append(link)
             elif not to:
                 red.append({"source_id": nid, "name": name, "type": ltype})
