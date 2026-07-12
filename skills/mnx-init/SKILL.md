@@ -92,12 +92,23 @@ This probe is read-only (`git ls-remote` with prompts disabled) — it never clo
   `~/.claude/mnemex/` directory if absent. Never write user config into `${CLAUDE_PLUGIN_ROOT}` — it is
   wiped on plugin updates.
 
-## 5. Verify
+## 5. Verify — and leave the graph doctor-clean on day one
 
 Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" sync`. Confirm `action` is `cloned` or
 `resynced`. If `error` (rare once the pre-flight passed — e.g. credentials changed between probe and
 sync), surface the git message, re-run `probe-remote` for a categorized diagnosis + remediation, and
-offer the local-folder fallback. On success, tell the user mnemex is ready and which graph it is bound to.
+offer the local-folder fallback.
+
+Then finish the setup **inside the synced `graph_root`** (skipping these leaves two permanent doctor
+warnings on a brand-new graph — inv-1 and inv-15):
+1. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_regen.py" install <graph_root>` — registers the
+   merge driver for generated files (git config is per-clone, so this runs after sync, in the clone).
+2. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_config.py" stamp <graph_root>/team-<name>` — stamp each
+   scaffolded team so config-drift detection has a baseline and the overdue nag starts its clock now.
+3. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_doctor.py" check <graph_root>` — expect **E0/W0**; then
+   `mnx_binding.py persist --message "mnx-init: day-one stamp"` to commit/push the stamp.
+
+On success, tell the user mnemex is ready and which graph it is bound to.
 
 ## First-contact graph behavior config
 

@@ -86,6 +86,9 @@ bounded batches, honoring `ingest_max_atoms_per_run` (excess resumes next run vi
 knowledge it holds — *"a fact (the *what*) or a prescriptive pattern (the *how*) a future agent would want
 months from now without the source open?"* Kind-aware policy:
 - **doc** → domain facts from sections; **patterns** from ADRs / decisions / "gotchas" / runbooks / CONTRIBUTING.
+  **Every `type: pattern` atom MUST carry a `trigger`** — the one-line "when does this pattern fire?"
+  (e.g. `"when sizing expiry windows in a connector"`). `mnx_stage.add` refuses a pattern without one,
+  so distil the trigger from the section's context at extraction time, not later.
 - **interface** → the *contract* (public API signature, `.proto`/GraphQL/OpenAPI message, exported type).
 - **code-doc** → the intent/semantics the author wrote down (docstrings, module/dir headers).
 - **config** → declared knobs + their meaning. **Secrets are never read.**
@@ -136,11 +139,24 @@ mnx_stage.py add --json <<'JSON'
   "aliases": ["field 124", "settlement cutoff"], "domain": ["settlement"], "score": "later",
   "ingest_batch": "ing-2026-07-11-a1b2",
   "provenance": { "source_repo": "github.com/acme/payments-service", "commit_sha": "9f3c1a…",
-                  "source_path": "settlement/reconcile.md", "anchor": "## Cut-off handling", "kind": "doc",
+                  "source_path": "settlement/reconcile.md", "anchor": "Cut-off handling", "kind": "doc",
                   "rationale": "distilled from settlement design doc" },
   "body": "Settlement reconciles the batch before posting; post-cutoff addenda ride in [[iso8583-field124]]." }
 JSON
 ```
+- **`provenance.anchor` = the unit's `anchor` from `probe` output, verbatim** (bare heading text, no
+  leading `#`s) — it is the glean-coverage key AND what the manifest ties node ids back to. A `pattern`
+  atom additionally carries the top-level `"trigger"` field (see the kind-aware policy above).
+
+**Hub atoms — make the mesh knit (do this, or the import lands ~all-red).** Fact atoms link to entity
+*names* ([[ilp-address]]), but no fact atom IS the entity page, so without hubs nearly every link stays
+a red-link and the whole import scores in-degree ≈ 0 (inert tiers, orphan-flood). For each **catalog
+entity** (Pass 1c output) that (a) is mentioned by **≥3** staged atoms and (b) has **no** graph match
+(ER said CREATE, not MERGE), stage **one hub atom**: `type: domain`, the entity's canonical name +
+aliases, `volatility: timeless` when definitional, a 1–3 sentence body that says what the entity *is*
+and `[[links]]` to its closest siblings. Red-links to it heal deterministically at promote
+(`mnx_phonebook.backfill`), knitting the mesh in the same run. Below the mention threshold, leave the
+red-link latent — a hub nobody points at is noise.
 The `--ingest-batch` label sets `bulk: true` and partitions these atoms from any hand-captures (DP8) — the
 per-session nag never fires, and the batch has its own large cap. Re-staging identical content is a no-op.
 
