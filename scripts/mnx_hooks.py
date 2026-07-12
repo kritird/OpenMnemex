@@ -314,8 +314,9 @@ def core_session_start(event: dict, hook_cmd_base: str = CLAUDE_HOOK_CMD_BASE) -
 
     if action in ("cloned", "resynced", "local"):
         status, available = res.get("message"), True
-    elif action == "offline":
-        status, available = res.get("message"), True  # usable, read-only
+    elif action in ("offline", "skipped-dirty", "skipped-unpushed"):
+        # usable but degraded: read-only offline, or local work preserved instead of resyncing
+        status, available = res.get("message"), True
     else:  # error
         status = f"could not prepare the graph. {res.get('detail', '')}".strip()
         available = False

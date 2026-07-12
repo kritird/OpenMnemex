@@ -383,9 +383,13 @@ def sync(binding: Binding) -> dict[str, Any]:
     """Make the graph ready for the session.
 
     Local graph: used in place — verify the folder exists (no clone/reset/push).
-    Remote graph: materialize at the remote HEAD; local divergence is DISCARDED by design
-    (persistence is the write skill's explicit push). Offline with an existing clone ->
-    degraded read-only warning, not a hard failure.
+    Remote graph: materialize at the remote HEAD. A CLEAN clone is hard-reset to origin;
+    a clone carrying uncommitted work or unpushed commits is NEVER destroyed (E2E finding
+    F11): resync is skipped with a `skipped-dirty` / `skipped-unpushed` action so a
+    half-finished promote, a stranded retry-push commit, or a manual edit survives the
+    next session start. The clone stays usable (merely possibly stale); persisting or
+    discarding is an explicit follow-up. Offline with an existing clone -> degraded
+    read-only warning, not a hard failure.
     """
     result: dict[str, Any] = {"kind": binding.kind(), "graph_root": binding.graph_root()}
 
@@ -410,6 +414,25 @@ def sync(binding: Binding) -> dict[str, Any]:
                           detail=fetch.stderr.strip())
             return result
         branch = _default_branch(path)
+        porcelain = _git(["status", "--porcelain"], cwd=path).stdout.strip()
+        if porcelain:
+            files = [ln[3:].strip() for ln in porcelain.splitlines()]
+            result.update(
+                action="skipped-dirty", branch=branch, dirty_files=files[:20],
+                message=(f"Graph clone has uncommitted local work ({len(files)} path(s)) — "
+                         "resync skipped so nothing is lost; reads may be stale vs origin. "
+                         "Persist it (mnx_binding.py persist) or discard it "
+                         f"(git -C {path} reset --hard && git -C {path} clean -fd), then resync."))
+            return result
+        ahead_out = _git(["rev-list", "--count", f"origin/{branch}..HEAD"], cwd=path)
+        ahead = int(ahead_out.stdout.strip() or 0) if ahead_out.returncode == 0 else 0
+        if ahead > 0:
+            result.update(
+                action="skipped-unpushed", branch=branch, ahead=ahead,
+                message=(f"Graph clone has {ahead} unpushed commit(s) — a previous promote "
+                         "committed but did not push. Resync skipped so the commit survives. "
+                         "Run mnx_binding.py push (or /mnemex:mnx-promote --retry-push)."))
+            return result
         _git(["reset", "--hard", f"origin/{branch}"], cwd=path)
         _git(["clean", "-fd"], cwd=path)
         result.update(action="resynced", branch=branch,
