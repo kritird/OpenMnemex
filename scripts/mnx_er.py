@@ -50,6 +50,13 @@ def _jaccard(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b)
 
 
+def _norm_alias(s: str) -> str:
+    """Whole-alias normal form for exact-identity matching (mirrors mnx_phonebook's exact-alias
+    semantics): lowercase, punctuation folded to single spaces. Unlike `_words` this keeps the
+    alias as ONE string — 'ILPv4' == 'ilpv4', but 'ILP address' != 'address'."""
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
 # --- item model (a staged atom or a graph node, uniformly) ------------------
 
 def _atom_item(a: dict[str, Any]) -> dict[str, Any]:
@@ -149,6 +156,27 @@ def resolve(graph: str, atoms: list[dict[str, Any]], team: Optional[str] = None,
     uf = _UF()
     for sid in staged_ids:
         uf.find(sid)
+
+    # NAME IDENTITY (deterministic, before any scoring): if item A carries an alias that IS
+    # what item B is called (B's normalized id), they are the same entity. The weighted token
+    # score alone misses alias-SUBSET duplicates across clusters (E2E 2026-07-12, finding G7:
+    # entity "ilpv4" vs "interledger-protocol-v4" whose alias list contains "ILPv4" scored below
+    # the possible band — token jaccard diluted by the richer alias set, domain overlap 0).
+    # Keyed on the ID, not any shared alias: two FACT atoms tagged with the same topical alias
+    # ("field 124") are not thereby one entity. stg- content-hash ids never normalize to an
+    # alias, so this only fires for named entity candidates and graph pages. Graph∧graph pairs
+    # stay out (mirrors the skip in the scoring loop below).
+    id_of: dict[str, str] = {iid: _norm_alias(str(iid)) for iid in items}
+    by_norm_id: dict[str, list[str]] = {}
+    for iid, key in id_of.items():
+        if key:
+            by_norm_id.setdefault(key, []).append(iid)
+    for iid, it in items.items():
+        for al in it["aliases"]:
+            for named in by_norm_id.get(_norm_alias(al), []):
+                if named == iid or (items[named]["graph"] and it["graph"]):
+                    continue
+                uf.union(iid, named)
     possible_pairs: list[dict[str, Any]] = []
     pair_score: dict[tuple[str, str], float] = {}
     for a_id, b_id in cand:
