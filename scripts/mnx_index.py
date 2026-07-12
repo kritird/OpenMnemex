@@ -165,8 +165,8 @@ def regenerate_index(cluster: str, materialized_state: Optional[dict[str, Any]] 
         live = mnx_decay.score(strength, last_update, now, mnx_decay.lam_for(ntype, cfg))
         ranked.append({
             "id": nid, "type": ntype,
-            "summary": str(node.get("summary", "")).replace("|", "\\|"),
-            "aliases": mnx_common.aliases_to_index(node.get("aliases")).replace("|", "\\|"),
+            "summary": mnx_common.escape_cell(node.get("summary", "")),
+            "aliases": mnx_common.escape_cell(mnx_common.aliases_to_index(node.get("aliases"))),
             "strength": strength, "last_update": last_update, "score": live,
             "stale_after": _stale_after(node, cfg),
         })
@@ -211,7 +211,7 @@ def _regenerate_split(cluster: str, name: str, description: str, children: list[
     dead_nodes = _dead_nodes(cluster)
     dead_tags = _dead_hint_tags(dead_nodes)
     dead_rows = [{"id": n["id"], "type": n.get("type", "domain"),
-                  "summary": str(n.get("summary", "")).replace("|", "\\|"),
+                  "summary": mnx_common.escape_cell(n.get("summary", "")),
                   "died": n.get("died", ""),
                   "superseded-by": n.get("superseded-by", "")} for n in dead_nodes]
 
@@ -388,7 +388,7 @@ def denorm_check(cluster: str) -> list[dict[str, Any]]:
                 node = by_id.get(row["id"])
                 if not node:
                     continue
-                want_summary = str(node.get("summary", "")).replace("|", "\\|")
+                want_summary = str(node.get("summary", ""))  # parse_md_table unescapes cells; compare raw
                 if row.get("summary", "") != want_summary:
                     drift.append({"id": row["id"], "field": "summary",
                                   "index": row.get("summary"), "node": want_summary})

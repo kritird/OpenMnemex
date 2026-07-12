@@ -85,7 +85,7 @@ def entries(team: str) -> list[dict[str, Any]]:
 
 
 def _esc(s: str) -> str:
-    return str(s).replace("|", "\\|")
+    return mnx_common.escape_cell(s)
 
 
 def regenerate(team: str) -> dict[str, Any]:

@@ -223,16 +223,42 @@ def split_h2_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def escape_cell(value: Any) -> str:
+    """Escape a value for a generated markdown-table cell (`|` → `\\|`).
+    Every table writer must use this; `parse_md_table` reverses it, so a summary
+    containing a pipe round-trips instead of shifting columns."""
+    return str(value).replace("|", "\\|")
+
+
+def unescape_cell(cell: str) -> str:
+    """Reverse `escape_cell` on a parsed table cell."""
+    return (cell or "").replace("\\|", "|")
+
+
+_CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
+
+
+def _split_row(line: str) -> list[str]:
+    """Split a markdown table row on UNESCAPED pipes only, then unescape each cell."""
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith("\\|"):
+        stripped = stripped[:-1]
+    return [unescape_cell(c.strip()) for c in _CELL_SPLIT_RE.split(stripped)]
+
+
 def parse_md_table(section_text: str) -> list[dict[str, str]]:
     """Parse a GitHub-flavoured markdown table into a list of row dicts keyed by
-    the (lower-cased) header cells. Separator rows are skipped."""
+    the (lower-cased) header cells. Separator rows are skipped. Cells are split on
+    unescaped `|` only and unescaped (`\\|` → `|`), mirroring `escape_cell`."""
     rows = [ln for ln in section_text.splitlines() if ln.strip().startswith("|")]
     if len(rows) < 1:
         return []
-    headers = [h.strip().lower() for h in rows[0].strip().strip("|").split("|")]
+    headers = [h.lower() for h in _split_row(rows[0])]
     out: list[dict[str, str]] = []
     for ln in rows[1:]:
-        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+        cells = _split_row(ln)
         if all(re.fullmatch(r":?-+:?", c or "-") for c in cells):
             continue  # separator
         row = {headers[i]: (cells[i] if i < len(cells) else "") for i in range(len(headers))}
