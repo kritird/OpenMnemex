@@ -145,7 +145,19 @@ def sole_referrer_of(node_id: str, reverse_map: dict[str, list[str]]) -> list[st
     return out
 
 
+_USAGE = [
+    'mnx_resolve.py resolve <id> <scope>      — node id → file path',
+    'mnx_resolve.py reverse-map <scope>       — target id → [referrer ids]',
+    'mnx_resolve.py in-degree <id> <scope>    — local + cross-team in-degree',
+    'mnx_resolve.py referrers <id> <scope>    — nodes linking to <id>',
+    'mnx_resolve.py struct <scope>            — liveness-weighted structural strength per node',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "resolve":

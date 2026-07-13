@@ -109,7 +109,16 @@ def struct_g(weighted_in_degree: float, cfg: dict[str, Any]) -> float:
     return smax * (1.0 - math.exp(-w / scale))
 
 
+_USAGE = [
+    'mnx_decay.py lam <half_life_days>                                — decay constant λ',
+    'mnx_decay.py score <strength> <last_update> <now> <half_life_days>  — decayed relevance score',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "lam":

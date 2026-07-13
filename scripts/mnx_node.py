@@ -292,7 +292,21 @@ def _json_stdin(argv: list[str]) -> dict[str, Any]:
     raise ValueError("this subcommand needs node fields via --json (stdin) or --json-file <path>")
 
 
+_USAGE = [
+    'mnx_node.py create --cluster <dir> [--json < node.json | --json-file <f>]      — create a node',
+    'mnx_node.py merge --id <n> --cluster <dir> [--meaning-change] [--json ...]     — merge new content into a node',
+    'mnx_node.py supersede --old-id <n> --cluster <dir> [--json ...]                — replace a node, forwarding its identity',
+    'mnx_node.py resurrect --id <n> --cluster <dir>                                 — revive a tombstoned node',
+    'mnx_node.py tombstone --id <n> --cluster <dir>                                 — mark a node dead',
+    'mnx_node.py revalidate --id <n> --cluster <dir> --ts <iso>                     — stamp a freshness revalidation',
+]
+_FLAGS = {"--cluster": True, "--id": True, "--old-id": True, "--ts": True, "--json-file": True, "--json": False, "--meaning-change": False}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     if yaml is None:
         return mnx_common.emit({"error": "PyYAML is required (pip install pyyaml)."}, ok=False)
     cmd = argv[1] if len(argv) > 1 else ""

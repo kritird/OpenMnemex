@@ -534,3 +534,10 @@ runs per delta batch over {new atoms ∪ existing pages}, never globally over th
 - stdout JSON payload (one object) for the skill to parse.
 - non-zero process exit on `FAIL`.
 - all mutating scripts are **no-ops without the team lock** (they verify the lock handle).
+- **`--help` / `-h` on every script** emits `{"usage": [<one line per subcommand>]}` + `STATUS=OK`,
+  and an **undeclared `--flag` is a usage error** (`{"error": "unknown flag: …", "usage": [...]}` +
+  `STATUS=FAIL`) instead of being silently consumed as a positional path — a cold agent can
+  self-correct from the payload (shared `mnx_common.cli_guard`; E2E 2026-07-12 findings F3 + G3).
+  Two deliberate exceptions: `mnx_hooks` is help-only (advisory hooks fail open, never reject argv),
+  and `mnx_regen merge` (the git merge-driver entrypoint) bypasses the guard so the driver path
+  stays byte-transparent.

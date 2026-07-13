@@ -437,7 +437,18 @@ def shard_index(cluster: str, by: str = "domain") -> dict[str, Any]:
             "groups": {k: len(v) for k, v in groups.items()}}
 
 
+_USAGE = [
+    'mnx_index.py regenerate <cluster>    — rebuild the cluster index.md from node truth',
+    'mnx_index.py denorm-check <cluster>  — index rows stale vs their nodes',
+    'mnx_index.py shard <cluster>         — split an over-budget index into continuation chunks',
+    'mnx_index.py node-ids <cluster>      — node ids across the head index + continuations',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "regenerate":

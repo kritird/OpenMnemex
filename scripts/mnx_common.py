@@ -488,7 +488,49 @@ def emit(payload: dict[str, Any], ok: bool = True) -> int:
     return 0 if ok else 1
 
 
+def cli_guard(argv: list[str], usage: list[str],
+              flags: Optional[dict[str, bool]] = None) -> Optional[int]:
+    """Shared `_main` preflight for every mnx_* CLI (E2E 2026-07-12, findings F3 + G3).
+
+    `--help` / `-h` anywhere in argv emits `{"usage": [...]}` and exits 0. Any other
+    `--flag` the module has not declared is a usage error instead of being silently
+    consumed as a positional path (G3: `mnx_doctor.py check --graph X` walked up from
+    cwd and reported "No graph root found"). `flags` maps each accepted flag to True
+    when it consumes the next token as its value — that value is skipped verbatim, so
+    flag values may themselves begin with `--`.
+
+    Returns an exit code when the invocation was handled here, else None (proceed).
+    """
+    flags = flags or {}
+    tail = argv[1:]
+    if "--help" in tail or "-h" in tail:
+        return emit({"usage": usage})
+    i = 0
+    while i < len(tail):
+        tok = tail[i]
+        if tok.startswith("--"):
+            if tok not in flags:
+                return emit({"error": f"unknown flag: {tok}", "usage": usage}, ok=False)
+            if flags[tok]:
+                i += 1  # the flag's value — never inspected, may start with '--'
+        i += 1
+    return None
+
+
+_USAGE = [
+    "mnx_common.py now                     — current UTC ISO-8601 timestamp",
+    "mnx_common.py slugify <text>          — slug form of <text>",
+    "mnx_common.py is-valid-id <id>        — validate a node id ([a-z0-9-]+)",
+    "mnx_common.py parse-node <node.md>    — front matter of a node file as JSON",
+    "mnx_common.py parse-index <index.md>  — parsed cluster index (hot/warm/cold)",
+    "mnx_common.py clusters <scope>        — cluster directories under a graph scope",
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else "now"
     try:
         if cmd == "now":

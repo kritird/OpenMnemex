@@ -401,7 +401,18 @@ def _write_crosslinks(team_dir: Path, team: str, rows: list[dict[str, str]]) -> 
     (team_dir / mnx_common.CROSSLINKS_FILENAME).write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
+_USAGE = [
+    "mnx_doctor.py check [scope]             — run the invariant suite (scope: graph root / team / cluster; default .)",
+    "mnx_doctor.py fix [scope]               — apply safe repairs (regenerate derived files)",
+    "mnx_doctor.py regen-crosslinks [scope]  — regenerate every team's cross-links.md from node truth",
+    "mnx_doctor.py check-staging             — invariant checks for the local staging tier",
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else "check"
     try:
         scope = argv[2] if len(argv) > 2 else "."

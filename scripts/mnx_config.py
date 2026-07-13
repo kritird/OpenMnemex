@@ -451,7 +451,22 @@ def set_value(repo: str, key: str, raw: str) -> dict[str, Any]:
     }
 
 
+_USAGE = [
+    "mnx_config.py load <team-or-graph>          — effective config (defaults + graph overrides)",
+    "mnx_config.py derive <team-or-graph>        — derived decay parameters (λ per type)",
+    "mnx_config.py drift <team-or-graph>         — config drift vs the last-compaction stamp",
+    "mnx_config.py stamp <team-or-graph>         — stamp the current config version",
+    "mnx_config.py show <repo> [--all]           — user-facing config view (--all includes advanced keys)",
+    "mnx_config.py set <repo> <key> <value>      — set one config key in mnemex.config.md",
+    "mnx_config.py horizon <node.md>             — the node's freshness horizon (stale_after)",
+]
+_FLAGS = {"--all": False}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     # Every subcommand takes a scope path first; a missing one must be a usage error,
     # not a bare "list index out of range" (E2E 2026-07-12, finding G2).

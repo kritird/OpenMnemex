@@ -224,7 +224,16 @@ def apply_links(plan: dict[str, Any], team: str) -> dict[str, Any]:
             "red_links": len(plan.get("red_links", []))}
 
 
+_USAGE = [
+    "mnx_mesh.py plan <team> <notes.json>   — resolve each note's [[wiki-links]] into a link plan",
+    'mnx_mesh.py apply <team> <plan.json>   — apply a link plan (mentions/edges mirrors, cross-links)',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     import json
     cmd = argv[1] if len(argv) > 1 else ""
     try:

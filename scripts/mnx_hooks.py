@@ -675,7 +675,15 @@ def _session_arg(argv: list[str]) -> str:
     return ""
 
 
+_USAGE = [
+    'mnx_hooks.py session-start|user-prompt-submit|stop|pre-compact|session-end|pre-commit-gate|post-apply-check   — hook entrypoints (event JSON on stdin)',
+    'mnx_hooks.py opt-out|opt-in [--session <id>]   — mute/unmute advisory nags for a session',
+]
+
+
 def _main(argv: list[str]) -> int:
+    if "--help" in argv[1:] or "-h" in argv[1:]:
+        return mnx_common.emit({"usage": _USAGE})
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         # opt-out / opt-in are agent-run plain commands (argv-driven, no stdin event).

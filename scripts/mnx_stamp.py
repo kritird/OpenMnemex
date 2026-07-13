@@ -158,7 +158,18 @@ def _arg(argv: list[str], flag: str) -> Optional[str]:
     return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
 
 
+_USAGE = [
+    'mnx_stamp.py append --cluster <dir> --id <node> [--role <r>] [--weight <w>]  — queue a usage stamp',
+    'mnx_stamp.py flush [--message <m>]   — write queued stamps through to the graph',
+    'mnx_stamp.py status                  — queued-stamp state',
+]
+_FLAGS = {"--cluster": True, "--id": True, "--role": True, "--weight": True, "--message": True}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "append":

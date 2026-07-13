@@ -214,7 +214,18 @@ def recover(team: str) -> dict[str, Any]:
             "plan": plan_path(team)}
 
 
+_USAGE = [
+    'mnx_lock.py acquire <team> | release <team>                  — team-level consolidation lock',
+    'mnx_lock.py acquire-cluster <cluster> | release-cluster <cluster>  — cluster-level lock',
+    'mnx_lock.py status <team>                                    — lock + in-progress pass state',
+    'mnx_lock.py recover <team>                                   — crash recovery for a stranded pass',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "acquire":

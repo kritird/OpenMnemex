@@ -114,7 +114,17 @@ def _load_json(path: Optional[str]) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+_USAGE = [
+    'mnx_glean.py step --before <n> --after <n> [--pass <n>] [--max <n>]  — should another glean pass run?',
+    'mnx_glean.py coverage --units <units.json> --staged <staged.json> [--pass <n>] [--max <n>]  — per-unit extraction coverage',
+]
+_FLAGS = {"--max": True, "--pass": True, "--before": True, "--after": True, "--units": True, "--staged": True}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     max_passes = int(_arg(argv, "--max") or DEFAULT_MAX_PASSES)
     pass_no = int(_arg(argv, "--pass") or 1)

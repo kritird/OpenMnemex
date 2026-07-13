@@ -163,7 +163,19 @@ def is_installed(repo: str = ".") -> bool:
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
+_USAGE = [
+    'mnx_regen.py merge <O> <A> <B> <P>   — git merge-driver entrypoint for generated files',
+    'mnx_regen.py regen <path>            — regenerate one derived file in place',
+    "mnx_regen.py install [repo]          — register the merge driver in the clone's git config",
+    'mnx_regen.py is-installed [repo]     — is the merge driver registered?',
+]
+
+
 def _main(argv: list[str]) -> int:
+    if argv[1:2] != ["merge"]:  # the git merge-driver call path stays byte-transparent
+        handled = mnx_common.cli_guard(argv, _USAGE)
+        if handled is not None:
+            return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "merge":

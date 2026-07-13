@@ -181,7 +181,15 @@ def status() -> dict[str, Any]:
     return out
 
 
+_USAGE = [
+    'mnx_status.py [status]   — binding + staging + graph health snapshot',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else "status"
     try:
         if cmd == "status":

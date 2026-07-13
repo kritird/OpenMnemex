@@ -600,7 +600,24 @@ def _atom_from_argv(argv: list[str]) -> dict[str, Any]:
     }
 
 
+_USAGE = [
+    'mnx_stage.py add --json < atom.json   (or --type t --summary s --aliases a;b --domain d [--trigger t] [--score now|later] [--urgent] [--volatility v] [--body b] [--ingest-batch l] [--source-repo r --commit-sha c --source-path p --anchor a --kind k] [--artifact|--reviews|--rejected|--rationale|--session ...])  — stage one atom (idempotent by content hash)',
+    "mnx_stage.py list [--ingest-batch <label>]        — staged atoms (label '_session' = unlabeled only)",
+    'mnx_stage.py status | size-check                  — staging budget + counts',
+    'mnx_stage.py overlay [--domain a,b] [--ingest-batch <label>]  — read-overlay projection',
+    'mnx_stage.py clear [--ingest-batch <label>]       — drop staged atoms (a drained batch)',
+    'mnx_stage.py clear-one --id <pid>                 — drop one staged atom',
+    'mnx_stage.py clear-merged --ids <pid,pid,...>     — drop atoms merged by a promote',
+    'mnx_stage.py hold --id <pid> [--reason r] [--contradicts <node-id>]  — park a contradicting atom',
+    'mnx_stage.py held-list | release-held --id <pid> | drop-held --id <pid>',
+]
+_FLAGS = {"--json": False, "--urgent": False, "--type": True, "--summary": True, "--aliases": True, "--domain": True, "--trigger": True, "--score": True, "--volatility": True, "--body": True, "--ingest-batch": True, "--source-repo": True, "--commit-sha": True, "--source-path": True, "--anchor": True, "--kind": True, "--artifact": True, "--reviews": True, "--rejected": True, "--rationale": True, "--session": True, "--id": True, "--ids": True, "--reason": True, "--contradicts": True}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     if yaml is None:
         return mnx_common.emit({"error": "PyYAML is required (pip install pyyaml)."}, ok=False)
     cmd = argv[1] if len(argv) > 1 else ""

@@ -454,7 +454,20 @@ def _arg(argv: list[str], flag: str) -> Optional[str]:
     return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
 
 
+_USAGE = [
+    'mnx_ingest.py acquire --source <url-or-path> [--cache <dir>]  — materialize a read-only corpus cache',
+    'mnx_ingest.py probe --root <dir> [--include <glob>] [--exclude <glob>] [--max-bytes <n>]  — classify files into extraction units',
+    'mnx_ingest.py delta --root <dir> --manifest <file> [--include <glob>] [--exclude <glob>] [--max-bytes <n>]  — added/changed/unchanged/orphans vs a prior ingest manifest',
+    'mnx_ingest.py manifest-write --graph <root> --source-slug <slug> [--json < files.json]  — record the ingest manifest for re-run deltas',
+    'mnx_ingest.py source-slug --source <url-or-path>  — the manifest slug for a source',
+]
+_FLAGS = {"--source": True, "--cache": True, "--root": True, "--include": True, "--exclude": True, "--max-bytes": True, "--manifest": True, "--graph": True, "--source-slug": True, "--json": False}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "acquire":

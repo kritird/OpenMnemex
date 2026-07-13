@@ -590,7 +590,23 @@ def _arg_after(argv: list[str], flag: str) -> Optional[str]:
     return None
 
 
+_USAGE = [
+    'mnx_binding.py resolve                          — the active binding (project > user > env)',
+    'mnx_binding.py sync                             — materialize/refresh the graph clone (never destroys local work)',
+    'mnx_binding.py status                           — binding + clone-present + unpushed state',
+    'mnx_binding.py unpushed-state                   — committed-but-unpushed promote state',
+    'mnx_binding.py graph-root | staging-path        — print the resolved path (exit 2 if unbound)',
+    'mnx_binding.py probe-remote --remote <url>      — read-only reachability + auth pre-flight',
+    'mnx_binding.py persist [--message <m>]          — commit (+push) graph changes',
+    'mnx_binding.py push                             — push the current branch',
+]
+_FLAGS = {"--remote": True, "--message": True}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else "resolve"
 
     if yaml is None:

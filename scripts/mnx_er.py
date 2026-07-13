@@ -275,7 +275,17 @@ def _arg(argv: list[str], flag: str) -> Optional[str]:
     return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else None
 
 
+_USAGE = [
+    "mnx_er.py resolve --atoms <staged.json> [--graph <root>] [--team <dir>] "
+    "[--match <f>] [--possible <f>]  — entity resolution: MERGE/COLLAPSE/CREATE clusters + possible band",
+]
+_FLAGS = {"--atoms": True, "--graph": True, "--team": True, "--match": True, "--possible": True}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "resolve":

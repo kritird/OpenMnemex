@@ -282,7 +282,21 @@ def overdue(team: str, cfg: dict[str, Any], now: str) -> dict[str, Any]:
             "config_drift": drift, "team": team_name}
 
 
+_USAGE = [
+    "mnx_compact.py overdue <team-or-graph>   — consolidation-overdue state (graph root: per-team aggregate)",
+    "mnx_compact.py highwater <cluster>       — the cluster's consolidation high-water mark",
+    "mnx_compact.py deltas <cluster>          — journal deltas since the high-water mark",
+    "mnx_compact.py revalidations <cluster>   — fresh `revalidated` stamps since the mark",
+    "mnx_compact.py retier <cluster>          — recompute hot/warm/cold tiers",
+    "mnx_compact.py rotate <cluster> [--drop] — rotate the journal (--drop discards processed entries)",
+]
+_FLAGS = {"--drop": False}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "overdue":

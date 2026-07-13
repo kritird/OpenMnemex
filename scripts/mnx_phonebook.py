@@ -309,7 +309,20 @@ def regenerate_org(graph_root: str) -> dict[str, Any]:
     return {"action": "regenerated", "teams": len(teams), "path": str(root / mnx_common.INDEX_FILENAME)}
 
 
+_USAGE = [
+    'mnx_phonebook.py regenerate <team>                    — rebuild the team phonebook from node truth',
+    'mnx_phonebook.py regenerate-org <graph-root>          — rebuild every team phonebook',
+    'mnx_phonebook.py entries <team>                       — phonebook entries (id, aliases, cluster_path)',
+    'mnx_phonebook.py resolve <name> <team>                — resolve a [[name]] to a node id',
+    'mnx_phonebook.py red-links <team>                     — outstanding unresolved [[names]]',
+    'mnx_phonebook.py backfill <team> <new_id> [aliases;semicolon;list]  — re-resolve red-links after a new page',
+]
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE)
+    if handled is not None:
+        return handled
     cmd = argv[1] if len(argv) > 1 else ""
     try:
         if cmd == "regenerate":

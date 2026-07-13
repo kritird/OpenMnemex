@@ -155,7 +155,17 @@ def pairs(scope: str, threshold: float = 0.5, num_perm: int = 64,
             "note": "possible near-duplicates — info-level worklist (S2) / ER blocker candidates; never an auto-edit"}
 
 
+_USAGE = [
+    'mnx_simindex.py query --text <t> [--scope <s>] [--threshold <f>]  — similar nodes for a text',
+    'mnx_simindex.py pairs [--scope <s>] [--threshold <f>] [--with <atoms.json>] [--intra]  — near-duplicate pairs',
+]
+_FLAGS = {"--text": True, "--scope": True, "--threshold": True, "--with": True, "--intra": False}
+
+
 def _main(argv: list[str]) -> int:
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
+    if handled is not None:
+        return handled
     args = argv[2:]
 
     def opt(flag, default=None):
