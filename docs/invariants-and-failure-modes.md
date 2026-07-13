@@ -52,7 +52,9 @@ documented limits, not defects.
 11. **(E) Hot bound.** Each cluster's `hot` section length ≤ `hot_k`.
 12. **(W) Budget.** No cluster index exceeds `node_budget` active nodes (else: split or escalate).
 13. **(I) Orphan flag.** Nodes with zero incoming edges (local + cross) are flagged (candidates the
-    conjunction gate may eventually demote).
+    conjunction gate may eventually demote). Reported as **one aggregate Info per cluster** — count +
+    first ids — never one finding per node (G13: a fresh bulk import produced 103 orphan Infos that
+    drowned every other finding).
 
 ### 📡 Telemetry / state
 14. **(E) High-water monotonic.** Each cluster's HWM only advances; registry has no lines below a

@@ -156,6 +156,7 @@ def check(scope: str) -> dict[str, Any]:
                               f"{cfg.get('node_body_max_chars', 6000)} (split into nodes + an edge)")
 
     # Referential integrity (1, 2, 13) + reverse-map consistency (3)
+    orphans_by_cluster: dict[str, list[str]] = {}
     for nid, node in nodes.items():
         if "_parse_error" in node:
             continue
@@ -167,13 +168,24 @@ def check(scope: str) -> dict[str, Any]:
                 add(2, "E", f"{nid}->{to_id}", "live edge points at a tombstoned node (repoint to superseded-by)")
             if to_id in all_ids and nid not in reverse.get(to_id, []):
                 add(3, "E", f"{nid}->{to_id}", "reverse map missing this edge")
-        # Orphan flag (13): live node with zero inbound edges
+        # Orphan flag (13): live node with zero inbound edges — collected, reported per cluster
         if nid in live_ids and not reverse.get(nid):
-            add(13, "I", nid, "node has zero incoming edges (orphan candidate)")
+            orphans_by_cluster.setdefault(str(node.get("_cluster") or root), []).append(nid)
         # Soft references (5)
         for ref in node.get("references") or []:
             if isinstance(ref, dict) and ref.get("to") and ref["to"] not in all_ids:
                 add(5, "I", f"{nid}~>{ref.get('to')}", "soft cross-team reference is dangling (no integrity guarantee)")
+    # Orphan candidates (13): ONE Info per cluster, not one per node — a fresh bulk import
+    # produced 103 orphan Infos that drowned every other finding (E2E 2026-07-12, G13).
+    for cluster_path, ids in sorted(orphans_by_cluster.items()):
+        ids = sorted(ids)
+        try:
+            where = str(Path(cluster_path).resolve().relative_to(root.resolve())) or "."
+        except ValueError:
+            where = cluster_path
+        shown = ", ".join(ids[:8]) + (f", +{len(ids) - 8} more" if len(ids) > 8 else "")
+        add(13, "I", where,
+            f"{len(ids)} node(s) with zero incoming edges (orphan candidates): {shown}")
 
     # Cross-links completeness + path accuracy (4)
     expected = _boundary_rows(scope)
