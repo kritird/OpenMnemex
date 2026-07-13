@@ -106,7 +106,9 @@ It returns the **zero-atom units** (`uncovered`) + a `stop` signal (`complete` =
 atom, or `cap` = `max_glean_passes` reached, default 2). For each uncovered unit, re-examine it once —
 *"what durable fact/entity did this unit contain that I did not extract?"* — then re-run `coverage`. A unit
 is *covered* when a staged atom carries its `anchor` in provenance. Stop on `complete`/`cap`. Re-staging
-identical content stays an idempotent no-op (DP10). The judgment stays here; `mnx_glean` only bounds/bookkeeps.
+identical content stays an idempotent no-op (DP10) and reports `action: already-staged` — count those
+separately from fresh `staged` so a re-run's summary shows the true delta. The judgment stays here;
+`mnx_glean` only bounds/bookkeeps.
 
 **1c — Assemble the in-batch entity catalog + entity-resolve (dedup, DP5).** Collect the candidate entities
 (canonical name + aliases + type) across the whole delta corpus, then run ER over `{new atoms ∪ existing

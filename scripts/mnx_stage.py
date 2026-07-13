@@ -324,10 +324,11 @@ def add(atom: dict[str, Any]) -> dict[str, Any]:
     norm = _normalize(atom)
     pid = provisional_id(norm)
     path = _atom_path(binding, pid)
+    already = path.exists()
 
     # Hard-cap backpressure: refuse a NEW atom once the batch is over the hard bound. A
     # re-stage of already-present content is always allowed (it changes nothing).
-    if not path.exists():
+    if not already:
         st = status(binding)
         cfg = _staging_cfg()
         if norm.get("ingest_batch"):
@@ -350,14 +351,17 @@ def add(atom: dict[str, Any]) -> dict[str, Any]:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     staged_at = mnx_common.now_utc()
-    if path.exists():  # preserve original staged_at on idempotent re-capture
+    if already:  # preserve original staged_at on idempotent re-capture
         try:
             staged_at = str(_load_atom(path).get("staged_at") or staged_at)
         except Exception:
             pass
     path.write_text(_serialize(norm, pid, staged_at), encoding="utf-8")
     st = status(binding)
-    return {"action": "staged", "provisional_id": pid, "type": norm["type"],
+    # "already-staged" = this content hash was present before the call (a no-op re-stage),
+    # so bulk re-runs can report new-vs-known accurately (E2E 2026-07-12, finding G9).
+    return {"action": "already-staged" if already else "staged",
+            "provisional_id": pid, "type": norm["type"],
             "score": norm["score"], "urgent": norm["urgent"], "path": str(path),
             "ingest_batch": norm.get("ingest_batch"), "bulk": bool(norm.get("ingest_batch")),
             "budget": st["budget"], "by_label": st["by_label"], "status": st}

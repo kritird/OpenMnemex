@@ -249,9 +249,11 @@ reconciles + merges them in and clears it. One folder per graph under
 
 ```
 provisional_id(atom) -> 'stg-<sha1[:12]>'   # content hash; idempotent capture; NEVER a real id
-add(atom) -> {action: staged|refused, provisional_id, budget, status}
+add(atom) -> {action: staged|already-staged|refused, provisional_id, budget, status}
     # validate (type domain|pattern, score now|later, pattern⇒trigger, summary required); write
     # atoms/<pid>.md with self-sufficient provenance; REFUSE a new atom past the HARD budget (backpressure).
+    # already-staged = the content hash was present before the call (idempotent re-stage, no-op) — lets
+    # a bulk re-run report new-vs-known accurately (G9).
 status() -> {count, urgent, oldest_age_days, total_bytes, budget:{level: ok|soft|hard, …}, thresholds}
 list_atoms() -> {count, atoms:[{provisional_id, type, summary, score, urgent, staged_at, …}]}
 overlay(domains=None) -> {count, atoms:[{…, body, state:'staged/unpromoted'}]}   # newest-first

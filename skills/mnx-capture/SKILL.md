@@ -158,7 +158,8 @@ JSON
 (Or use flags for a simple atom: `add --type domain --summary "…" --domain settlement --score later
 --aliases "a;b" --artifact <id> --reviews "r3;r7" --rationale "…" --body "…"`.) The helper mints the
 **provisional id** (a content hash, `stg-…`) — never invent an id, never reuse a real node id. A
-re-capture of identical content is idempotent.
+re-capture of identical content is idempotent and reports `action: already-staged` (vs `staged` for
+new content) — count the two separately so your report reflects the true delta.
 
 ## Phase 4 — Report
 Summarize what was staged **this pass**: the new atoms (counts by score), any `urgent`, and the
