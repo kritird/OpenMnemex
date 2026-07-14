@@ -4,8 +4,9 @@ One stdio server, spawned by the host agent, dead with the session — no port, 
 Every tool is a thin shim over an importable engine function (in-process, no subprocess
 fan-out); no logic lives here beyond schema validation, the session guards, and the
 path-confinement check. Commit 1b added the binding/health surface (bind_status, status,
-doctor_check, doctor_fix, init_graph); commit 1c adds the read surface (read_frontier,
-read_cluster, read_nodes, record_usage); capture tools arrive in 1d.
+doctor_check, doctor_fix, init_graph); commit 1c added the read surface (read_frontier,
+read_cluster, read_nodes, record_usage); commit 1d adds the capture surface (capture_status,
+capture_add, capture_drop, capture_discard_all, glean_step).
 
 Session-level contracts implemented here (§5.2):
 
@@ -51,10 +52,12 @@ from typing import Any, Callable, Optional
 import mnx_binding
 import mnx_common
 import mnx_doctor
+import mnx_glean
 import mnx_hooks
 import mnx_init
 import mnx_read
 import mnx_resolve
+import mnx_stage
 import mnx_stamp
 import mnx_status
 
@@ -382,8 +385,69 @@ def _record_usage(manifest: list[dict[str, Any]],
     return out
 
 
+# --- tool bodies (Phase 1 commit 1d: capture) ---------------------------------------
+#
+# Straight passthroughs to mnx_stage (the local, per-author staging tier) and mnx_glean
+# (the bounded guardrail loop). Extraction/scoring judgment stays with the host model
+# (the mnx-capture SKILL / capture-procedure prompt) — these tools only stage, list,
+# drop, and bound the loop.
+
+@tool_guard()
+def _capture_status(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Staging budget level (soft/hard) plus the full staged ledger (id·type·score·summary·
+    age) — the delta ledger the capture procedure walks each pass."""
+    st = mnx_stage.status(binding=binding)
+    st["atoms"] = mnx_stage.list_atoms(binding=binding)["atoms"]
+    return st
+
+
+@tool_guard()
+def _capture_add(type: str = "domain", summary: str = "", aliases: Optional[list[str]] = None,
+                 domain: Optional[list[str]] = None, trigger: Optional[str] = None,
+                 score: str = "later", urgent: bool = False, volatility: Any = "default",
+                 provenance: Optional[dict[str, Any]] = None, body: str = "",
+                 binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Stage one atom. Idempotent by content hash (a re-capture of identical content is a
+    no-op restage, not a duplicate). Refuses a NEW atom once the session batch is past the
+    hard budget — the refusal message names both ways out (promote to drain, or drop/
+    discard-all to make room)."""
+    atom = {"type": type, "summary": summary, "aliases": aliases, "domain": domain,
+            "trigger": trigger, "score": score, "urgent": urgent, "volatility": volatility,
+            "provenance": provenance or {}, "body": body}
+    try:
+        return mnx_stage.add(atom)
+    except ValueError as ve:
+        raise ToolError("invalid-atom", str(ve), "fix the atom fields and retry") from ve
+
+
+@tool_guard()
+def _capture_drop(pid: str, binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Drop one staged atom by its provisional id. Not-found is a noop, not an error."""
+    return mnx_stage.clear_one(pid, binding=binding)
+
+
+@tool_guard()
+def _capture_discard_all(confirm: bool = False, binding: Any = None,
+                         sync: Any = None) -> dict[str, Any]:
+    """Discard the ENTIRE staged batch for this graph. Mutating — refuses without confirm."""
+    if not confirm:
+        raise ToolError("confirm-required",
+                        "capture_discard_all removes every staged atom for this graph; it "
+                        "needs explicit confirmation.",
+                        "call capture_discard_all again with confirm=true")
+    return mnx_stage.clear(binding=binding)
+
+
+@tool_guard(sync_first=False)
+def _glean_step(before: int, after: int, pass_no: int,
+                max_passes: int = mnx_glean.DEFAULT_MAX_PASSES) -> dict[str, Any]:
+    """One guardrail tick of the capture glean loop: did the last pass add a new staged atom,
+    and should another pass run. Pure computation — no binding, no staging access."""
+    return mnx_glean.step(before, after, pass_no, max_passes)
+
+
 def register_tools(server: "FastMCP") -> None:
-    """Register the Phase-1 binding/health + read surface. Capture tools (1d) follow."""
+    """Register the Phase-1 binding/health + read + capture surface."""
 
     @server.tool(name="bind_status",
                  description="Report which Mnemex graph is resolved for this project/user, the "
@@ -454,6 +518,50 @@ def register_tools(server: "FastMCP") -> None:
     def record_usage(manifest: list[dict[str, Any]]) -> dict[str, Any]:
         return _record_usage(manifest)
 
+    @server.tool(name="capture_status",
+                 description="Staging budget level (soft/hard) plus the full staged ledger "
+                             "(provisional id, type, score, summary, age) for this graph. "
+                             "Read-only.")
+    def capture_status() -> dict[str, Any]:
+        return _capture_status()
+
+    @server.tool(name="capture_add",
+                 description="Stage one durable atom extracted from the session: "
+                             "{type: domain|pattern, summary, aliases?, domain?, trigger? "
+                             "(required for pattern), score: now|later, urgent?, volatility?, "
+                             "provenance?, body}. Idempotent by content hash. Refuses a NEW "
+                             "atom once the session batch is past the hard budget — the "
+                             "refusal names both ways out (promote, or capture_drop/"
+                             "capture_discard_all).")
+    def capture_add(type: str = "domain", summary: str = "", aliases: Optional[list[str]] = None,
+                    domain: Optional[list[str]] = None, trigger: Optional[str] = None,
+                    score: str = "later", urgent: bool = False, volatility: Any = "default",
+                    provenance: Optional[dict[str, Any]] = None,
+                    body: str = "") -> dict[str, Any]:
+        return _capture_add(type, summary, aliases, domain, trigger, score, urgent,
+                            volatility, provenance, body)
+
+    @server.tool(name="capture_drop",
+                 description="Drop one staged atom by its provisional id (stg-...). Not-found "
+                             "is a noop, not an error.")
+    def capture_drop(pid: str) -> dict[str, Any]:
+        return _capture_drop(pid)
+
+    @server.tool(name="capture_discard_all",
+                 description="Discard every staged atom for this graph. MUTATING: pass "
+                             "confirm=true to proceed.")
+    def capture_discard_all(confirm: bool = False) -> dict[str, Any]:
+        return _capture_discard_all(confirm=confirm)
+
+    @server.tool(name="glean_step",
+                 description="One guardrail tick of the capture glean loop: pass the staged "
+                             "count before and after a recall pass; returns whether the pass "
+                             "made progress and whether to run another (stop at no-progress or "
+                             "at the pass cap). Pure computation.")
+    def glean_step(before: int, after: int, pass_no: int,
+                   max_passes: int = mnx_glean.DEFAULT_MAX_PASSES) -> dict[str, Any]:
+        return _glean_step(before, after, pass_no, max_passes)
+
 
 # --- the server --------------------------------------------------------------------
 
@@ -474,7 +582,7 @@ def sdk_available() -> bool:
 def create_server() -> "FastMCP":
     """Build the FastMCP stdio server with the currently-shipped tools.
 
-    Phase 1 registers binding/health (1b) and read (1c); capture (1d) tools follow."""
+    Phase 1 registers binding/health (1b), read (1c), and capture (1d)."""
     if not sdk_available():
         raise RuntimeError(_sdk_missing_message())
     server = FastMCP(name=SERVER_NAME, instructions=_INSTRUCTIONS)
