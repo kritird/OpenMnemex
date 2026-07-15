@@ -5,8 +5,11 @@ Every tool is a thin shim over an importable engine function (in-process, no sub
 fan-out); no logic lives here beyond schema validation, the session guards, and the
 path-confinement check. Commit 1b added the binding/health surface (bind_status, status,
 doctor_check, doctor_fix, init_graph); commit 1c added the read surface (read_frontier,
-read_cluster, read_nodes, record_usage); commit 1d adds the capture surface (capture_status,
-capture_add, capture_drop, capture_discard_all, glean_step).
+read_cluster, read_nodes, record_usage); commit 1d added the capture surface (capture_status,
+capture_add, capture_drop, capture_discard_all, glean_step); commit 2b adds the promote
+surface (promote_begin, promote_context, promote_apply, promote_retry_push, promote_abort)
+plus the held-contradictions queue (held_list, held_release, held_drop) — thin sessions over
+``mnx_promote`` (§6.2), the plan-transaction orchestrator built in commit 2a.
 
 Session-level contracts implemented here (§5.2):
 
@@ -55,6 +58,7 @@ import mnx_doctor
 import mnx_glean
 import mnx_hooks
 import mnx_init
+import mnx_promote
 import mnx_read
 import mnx_resolve
 import mnx_stage
@@ -446,8 +450,101 @@ def _glean_step(before: int, after: int, pass_no: int,
     return mnx_glean.step(before, after, pass_no, max_passes)
 
 
+# --- tool bodies (Phase 2 commit 2b: promote) ----------------------------------------
+#
+# Thin sessions over mnx_promote (§6.2) — the plan-transaction orchestrator built in commit
+# 2a. The host does the reconcile judgment (dispositions in the plan); these tools only
+# guard the call (mute/sync) and translate mnx_promote's ValueErrors into the error contract.
+# No `team` parameter is exposed — every tool uses the resolved binding's default_team,
+# matching the §5.3 catalog's `{}` param shape.
+
+@tool_guard()
+def _promote_begin(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Preflight (flush stamps, D7 unpushed guard, stranded-plan recovery) then acquire the
+    team lock. Returns the staged session batch + team phonebook, or a guard block (busy/
+    unpushed/ingest-batch) naming the next step."""
+    try:
+        return mnx_promote.begin(binding=binding)
+    except ValueError as ve:
+        raise ToolError("no-team", str(ve),
+                        "configure a default_team for this binding, or run init_graph") from ve
+
+
+@tool_guard()
+def _promote_context(pids: Optional[list[str]] = None, clusters: Optional[list[str]] = None,
+                     binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Everything the reconcile judgment needs in one call: the staged batch (optionally
+    filtered), mnx_simindex near-match candidates per atom, routed cluster index rows, and
+    a mnx_mesh link-plan preview."""
+    return mnx_promote.context(binding=binding, pids=pids, clusters=clusters)
+
+
+@tool_guard()
+def _promote_apply(plan: dict[str, Any], approved: bool = False,
+                   binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Execute the promote SKILL's Step 5 (writes -> mesh -> consolidate -> regen -> doctor
+    gate -> persist -> settle) under the lock acquired by promote_begin. MUTATING: refuses
+    without approved=true — the human approval named in the procedure's Step 4. A rejected
+    plan (validation or doctor-gate) or a committed-but-unpushed merge comes back as a
+    structured, non-error payload, not a ToolError."""
+    if not approved:
+        raise ToolError("approval-required",
+                        "promote_apply executes a plan transaction; it needs explicit human "
+                        "approval.",
+                        "present the plan to the user, then call promote_apply again with "
+                        "approved=true")
+    try:
+        return mnx_promote.apply(plan, approved=True, binding=binding)
+    except ValueError as ve:
+        raise ToolError("no-lock", str(ve), "call promote_begin first") from ve
+
+
+@tool_guard()
+def _promote_retry_push(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Push an already-committed promote merge, then perform the deferred per-atom settle
+    from the persisted plan."""
+    try:
+        return mnx_promote.retry_push(binding=binding)
+    except ValueError as ve:
+        raise ToolError("no-pending-plan", str(ve),
+                        "nothing to retry; call promote_begin to start a new promote") from ve
+
+
+@tool_guard()
+def _promote_abort(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Release the team lock and drop any pending plan. Staging is left untouched."""
+    return mnx_promote.abort(binding=binding)
+
+
+# --- tool bodies (Phase 2 commit 2b: held queue) -------------------------------------
+#
+# Straight passthroughs to mnx_stage's held-contradictions queue (populated by a `hold`
+# disposition in promote_apply).
+
+@tool_guard()
+def _held_list(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """The held-contradictions queue: count, items (provisional id, reason, contradicts,
+    age), and the lingering-bound nag. Read-only."""
+    return mnx_stage.held_status(binding=binding)
+
+
+@tool_guard()
+def _held_release(pid: str, binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Return a held atom to the active staging queue for re-reconciliation on the next
+    promote (the contradiction was resolved in the atom's favour). Not-held is a noop."""
+    return mnx_stage.release_held(pid, binding=binding)
+
+
+@tool_guard()
+def _held_drop(pid: str, binding: Any = None, sync: Any = None) -> dict[str, Any]:
+    """Discard a held atom outright (the contradiction was resolved in the graph's favour).
+    Not-held is a noop, not an error."""
+    return mnx_stage.drop_held(pid, binding=binding)
+
+
 def register_tools(server: "FastMCP") -> None:
-    """Register the Phase-1 binding/health + read + capture surface."""
+    """Register the Phase-1 binding/health + read + capture surface, and the Phase-2
+    promote + held-queue surface (commit 2b)."""
 
     @server.tool(name="bind_status",
                  description="Report which Mnemex graph is resolved for this project/user, the "
@@ -562,6 +659,72 @@ def register_tools(server: "FastMCP") -> None:
                    max_passes: int = mnx_glean.DEFAULT_MAX_PASSES) -> dict[str, Any]:
         return _glean_step(before, after, pass_no, max_passes)
 
+    @server.tool(name="promote_begin",
+                 description="Begin a promote transaction: preflight guards (D7 unpushed -> "
+                             "promote_retry_push, stranded-plan recovery), flush pending usage "
+                             "stamps, then acquire the team lock. Returns the staged session "
+                             "batch (with provenance) and the team phonebook, or a guard block "
+                             "(busy/unpushed/ingest-batch) naming the next step. Call "
+                             "promote_context next.")
+    def promote_begin() -> dict[str, Any]:
+        return _promote_begin()
+
+    @server.tool(name="promote_context",
+                 description="Everything the reconcile judgment needs in one call: the staged "
+                             "batch (optionally filtered by pids/clusters), near-match "
+                             "candidates per atom, routed cluster index rows, and a mesh "
+                             "link-plan preview. Call after promote_begin, before drafting the "
+                             "plan.")
+    def promote_context(pids: Optional[list[str]] = None,
+                        clusters: Optional[list[str]] = None) -> dict[str, Any]:
+        return _promote_context(pids, clusters)
+
+    @server.tool(name="promote_apply",
+                 description="Execute an approved plan transaction: node writes -> mesh links "
+                             "-> consolidate -> regenerate indexes/cross-links/phonebook -> "
+                             "doctor gate (rolls back on failure) -> persist -> per-atom settle. "
+                             "MUTATING: pass approved=true after presenting the plan to the user "
+                             "(the promote procedure's Step 4 approval). `plan` is "
+                             "{plan_version: 1, dispositions: [{pid, op: create|merge|supersede|"
+                             "resurrect|drop_dup|hold, ...op-specific fields}], splits?, links?, "
+                             "consolidate?} — every staged pid from promote_begin's batch must "
+                             "get exactly one disposition.")
+    def promote_apply(plan: dict[str, Any], approved: bool = False) -> dict[str, Any]:
+        return _promote_apply(plan, approved)
+
+    @server.tool(name="promote_retry_push",
+                 description="Push an already-committed promote merge (after a prior "
+                             "promote_apply returned action=committed-not-pushed, or "
+                             "promote_begin's unpushed guard fired), then perform the deferred "
+                             "per-atom settle.")
+    def promote_retry_push() -> dict[str, Any]:
+        return _promote_retry_push()
+
+    @server.tool(name="promote_abort",
+                 description="Release the team lock and drop any pending plan. Staging is left "
+                             "untouched — staged atoms remain for a later promote_begin.")
+    def promote_abort() -> dict[str, Any]:
+        return _promote_abort()
+
+    @server.tool(name="held_list",
+                 description="The held-contradictions queue: count, items (provisional id, "
+                             "reason, contradicts, age), and the lingering-bound nag. Read-only.")
+    def held_list() -> dict[str, Any]:
+        return _held_list()
+
+    @server.tool(name="held_release",
+                 description="Return a held atom to the active staging queue so it is "
+                             "re-reconciled on the next promote (the contradiction was resolved "
+                             "in the atom's favour). Not-held is a noop.")
+    def held_release(pid: str) -> dict[str, Any]:
+        return _held_release(pid)
+
+    @server.tool(name="held_drop",
+                 description="Discard a held atom outright (the contradiction was resolved in "
+                             "the graph's favour). Not-held is a noop, not an error.")
+    def held_drop(pid: str) -> dict[str, Any]:
+        return _held_drop(pid)
+
 
 # --- the server --------------------------------------------------------------------
 
@@ -582,7 +745,8 @@ def sdk_available() -> bool:
 def create_server() -> "FastMCP":
     """Build the FastMCP stdio server with the currently-shipped tools.
 
-    Phase 1 registers binding/health (1b), read (1c), and capture (1d)."""
+    Phase 1 registers binding/health (1b), read (1c), and capture (1d); Phase 2 adds
+    promote + the held queue (2b)."""
     if not sdk_available():
         raise RuntimeError(_sdk_missing_message())
     server = FastMCP(name=SERVER_NAME, instructions=_INSTRUCTIONS)
