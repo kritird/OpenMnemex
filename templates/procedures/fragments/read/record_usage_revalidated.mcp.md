@@ -1,0 +1,1 @@
+Call `record_usage` with `manifest: [{id, role: "revalidated", weight: 0}]`.

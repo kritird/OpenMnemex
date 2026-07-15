@@ -1,0 +1,1 @@
+Call `read_cluster` with `cluster=<cluster-path>` and `tiers=["hot"]`.

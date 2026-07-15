@@ -1,0 +1,1 @@
+Call `capture_status` (its staged ledger).

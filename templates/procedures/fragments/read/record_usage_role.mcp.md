@@ -1,0 +1,1 @@
+Call `record_usage` with `manifest: [{id, role: contributed|consulted, weight?}]`.

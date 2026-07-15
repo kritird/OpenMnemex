@@ -1,0 +1,1 @@
+the `capture_status` tool (check its `budget.level`)

@@ -59,6 +59,7 @@ import mnx_doctor
 import mnx_glean
 import mnx_hooks
 import mnx_init
+import mnx_procedures
 import mnx_promote
 import mnx_read
 import mnx_resolve
@@ -625,7 +626,8 @@ def register_tools(server: "FastMCP") -> None:
                  description="Org head + team heads (one-line descriptions + child cluster "
                              "descriptions), plus the graph-wide consolidation-overdue warning. "
                              "Route by matching descriptions to the request, then call "
-                             "read_cluster on the chosen cluster path(s). Read-only.")
+                             "read_cluster on the chosen cluster path(s). Read-only.\n\n"
+                             + mnx_procedures.render_digest("read"))
     def read_frontier() -> dict[str, Any]:
         return _read_frontier()
 
@@ -675,7 +677,8 @@ def register_tools(server: "FastMCP") -> None:
                              "promote time, so an oversized body is staged and later lands "
                              "unsplit unless the host splits it into multiple linked atoms "
                              "itself; the result carries `over_budget: {chars, cap}` when this "
-                             "applies.")
+                             "applies.\n\n"
+                             + mnx_procedures.render_digest("capture"))
     def capture_add(type: str = "domain", summary: str = "", aliases: Optional[list[str]] = None,
                     domain: Optional[list[str]] = None, trigger: Optional[str] = None,
                     score: str = "later", urgent: bool = False, volatility: Any = "default",
@@ -711,7 +714,8 @@ def register_tools(server: "FastMCP") -> None:
                              "stamps, then acquire the team lock. Returns the staged session "
                              "batch (with provenance) and the team phonebook, or a guard block "
                              "(busy/unpushed/ingest-batch) naming the next step. Call "
-                             "promote_context next.")
+                             "promote_context next.\n\n"
+                             + mnx_procedures.render_digest("promote"))
     def promote_begin() -> dict[str, Any]:
         return _promote_begin()
 
@@ -788,6 +792,43 @@ def register_tools(server: "FastMCP") -> None:
         return _held_drop(pid)
 
 
+def register_prompts(server: "FastMCP") -> None:
+    """Register the four judgment-procedure prompts (plan v2 §5.4, commit 3b).
+
+    Bodies are generated from ``templates/procedures/*.core.md`` via ``mnx_procedures`` — the
+    same build that produces the Claude skills (commit 3a) — so the procedure prose can never
+    hand-drift between the plugin and MCP surfaces (CLAUDE.md: keep both in lockstep)."""
+
+    @server.prompt(name="read-procedure",
+                    description="The read judgment procedure: route via read_frontier, scan "
+                                "tiers via read_cluster (hot first), expand via read_nodes, "
+                                "then record_usage for every node body loaded.")
+    def read_procedure() -> str:
+        return mnx_procedures.render_mcp_prompt("read")
+
+    @server.prompt(name="capture-procedure",
+                    description="The capture judgment procedure: mine the transcript for the "
+                                "delta capture_status hasn't covered, glean once, score "
+                                "now/later/not-needed, then capture_add per atom with "
+                                "self-sufficient provenance.")
+    def capture_procedure() -> str:
+        return mnx_procedures.render_mcp_prompt("capture")
+
+    @server.prompt(name="promote-procedure",
+                    description="The promote judgment procedure: promote_begin, "
+                                "promote_context, draft one disposition+link+consolidate "
+                                "plan, present it for approval, then promote_apply.")
+    def promote_procedure() -> str:
+        return mnx_procedures.render_mcp_prompt("promote")
+
+    @server.prompt(name="curate-procedure",
+                    description="The curate judgment procedure: review, drop, or discard "
+                                "atoms already staged (capture_status / capture_drop / "
+                                "capture_discard_all) — the un-stage escape valve.")
+    def curate_procedure() -> str:
+        return mnx_procedures.render_mcp_prompt("curate")
+
+
 # --- the server --------------------------------------------------------------------
 
 def _sdk_missing_message() -> str:
@@ -805,10 +846,10 @@ def sdk_available() -> bool:
 
 
 def create_server() -> "FastMCP":
-    """Build the FastMCP stdio server with the currently-shipped tools.
+    """Build the FastMCP stdio server with the currently-shipped tools + prompts.
 
     Phase 1 registers binding/health (1b), read (1c), and capture (1d); Phase 2 adds
-    promote + the held queue (2b)."""
+    promote + the held queue (2b); Phase 3 adds the four judgment-procedure prompts (3b)."""
     if not sdk_available():
         raise RuntimeError(_sdk_missing_message())
     server = FastMCP(name=SERVER_NAME, instructions=_INSTRUCTIONS)
@@ -816,6 +857,7 @@ def create_server() -> "FastMCP":
     # this the host would see the SDK's version instead of ours in initialize.serverInfo.
     server._mcp_server.version = engine_version()
     register_tools(server)
+    register_prompts(server)
     return server
 
 

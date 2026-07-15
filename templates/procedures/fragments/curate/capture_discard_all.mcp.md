@@ -1,0 +1,1 @@
+`capture_discard_all` with `confirm=true`

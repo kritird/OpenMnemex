@@ -1,0 +1,1 @@
+Call the `read_frontier` tool (no arguments).

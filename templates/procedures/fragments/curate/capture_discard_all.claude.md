@@ -1,0 +1,1 @@
+`mnx_stage.py clear`
