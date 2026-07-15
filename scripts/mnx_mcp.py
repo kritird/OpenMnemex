@@ -745,8 +745,12 @@ def register_tools(server: "FastMCP") -> None:
                              "dup_of; hold needs reason. `links.confirmed_suggestions` is "
                              "[{src, dst}]; `consolidate` is {run: bool, approved_deaths: "
                              "[id,...]} — both must be objects/omitted, not other JSON types. "
-                             "A pre-existing node's edges into a just-superseded id are "
-                             "repointed to the successor automatically — no plan field needed.")
+                             "src/dst may be either a real node id or the staged pid of an atom "
+                             "disposed in this SAME plan (create/merge/supersede/resurrect) — "
+                             "translated to its real id automatically, since a create's real id "
+                             "isn't known until this call mints it. A pre-existing node's edges "
+                             "into a just-superseded id are repointed to the successor "
+                             "automatically — no plan field needed.")
     def promote_apply(plan: dict[str, Any], approved: bool = False) -> dict[str, Any]:
         return _promote_apply(plan, approved)
 

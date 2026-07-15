@@ -438,6 +438,13 @@ def apply(plan: dict[str, Any], approved: bool = True,
                     _touch(cluster)
                     _note(cluster, node["id"], "repoint")
 
+    # A host only has the staged pid for a not-yet-created node at plan-drafting time (the
+    # real slug is minted by mnx_node.create below), so confirmed_suggestions naturally gets
+    # written with a pid on one or both sides. Track pid -> real id as each disposition lands
+    # so those get translated instead of producing a phantom missing_sources entry (the pid
+    # was never a real node path) alongside the correctly-resolved body-wikilink link.
+    pid_to_id: dict[str, str] = {}
+
     for d in plan.get("dispositions", []):
         pid, op = d["pid"], d["op"]
         if op == "create":
@@ -445,12 +452,14 @@ def apply(plan: dict[str, Any], approved: bool = True,
             res = mnx_node.create(cluster, d["fields"])
             _touch(cluster)
             _note(cluster, res["id"], "create")
+            pid_to_id[pid] = res["id"]
             disposition_summary.append({"pid": pid, "op": op, "id": res["id"]})
         elif op == "merge":
             cluster = _cluster_path(graph_root, d["cluster"])
             res = mnx_node.merge(d["id"], cluster, d.get("changes") or {}, d.get("meaning_change", False))
             _touch(cluster)
             _note(cluster, d["id"], "merge")
+            pid_to_id[pid] = d["id"]
             disposition_summary.append({"pid": pid, "op": op, "id": d["id"]})
         elif op == "supersede":
             cluster = _cluster_path(graph_root, d["cluster"])
@@ -458,12 +467,14 @@ def apply(plan: dict[str, Any], approved: bool = True,
             _touch(cluster)
             _note(cluster, res["new_id"], "create")
             _repoint_referrers(d["old_id"])
+            pid_to_id[pid] = res["new_id"]
             disposition_summary.append({"pid": pid, "op": op, "old_id": d["old_id"], "new_id": res["new_id"]})
         elif op == "resurrect":
             cluster = _cluster_path(graph_root, d["cluster"])
             mnx_node.resurrect(d["id"], cluster)
             _touch(cluster)
             _note(cluster, d["id"], "resurrect")
+            pid_to_id[pid] = d["id"]
             disposition_summary.append({"pid": pid, "op": op, "id": d["id"]})
         elif op == "drop_dup":
             disposition_summary.append({"pid": pid, "op": op, "dup_of": d.get("dup_of")})
@@ -479,14 +490,18 @@ def apply(plan: dict[str, Any], approved: bool = True,
             _touch(cluster)
             _note(cluster, res["id"], "create")
             pieces_summary.append(res["id"])
+        if pieces_summary:
+            pid_to_id[pid] = pieces_summary[0]
         disposition_summary.append({"pid": pid, "op": "split", "pieces": pieces_summary})
 
     link_summary = None
     if notes:
         link_plan = mnx_mesh.plan_links(notes, team_path)
         for cs in (plan.get("links") or {}).get("confirmed_suggestions", []):
-            link_plan["links"].append({"source_id": cs["src"], "to": cs["dst"], "type": None,
-                                       "origin": "confirmed-suggestion", "name": cs["dst"]})
+            src = pid_to_id.get(cs["src"], cs["src"])
+            dst = pid_to_id.get(cs["dst"], cs["dst"])
+            link_plan["links"].append({"source_id": src, "to": dst, "type": None,
+                                       "origin": "confirmed-suggestion", "name": dst})
         link_summary = mnx_mesh.apply_links(link_plan, team_path)
 
     consolidate = plan.get("consolidate") or {}

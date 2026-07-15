@@ -203,7 +203,16 @@ def merge(id: str, cluster: str | Path, changes: dict[str, Any],
     """Fold new knowledge into an existing node in place. Keeps id + created. verified=now always;
     updated=now ONLY on a meaning-change (a use/confirm is not a meaning change). Body preserved
     verbatim unless `changes` supplies a new body. `changes` fields are listed + documented in
-    MERGE_CHANGE_KEYS: aliases/edges/references/mentions/body REPLACE, they do not append."""
+    MERGE_CHANGE_KEYS: aliases/edges/references/mentions/body REPLACE, they do not append.
+    Raises on an unrecognized `changes` key rather than silently dropping it — checked here
+    (not only by mnx_promote.validate_plan) so every caller of the shared writer is protected,
+    including the CLI and the Claude-skill path, neither of which goes through validate_plan."""
+    unknown = set(changes) - MERGE_CHANGE_KEYS
+    if unknown:
+        raise ValueError(f"unrecognized changes field(s) {sorted(unknown)} "
+                         f"(recognized: {sorted(MERGE_CHANGE_KEYS)}; aliases/edges/references/"
+                         "mentions/body REPLACE the existing value, they do not append — "
+                         "include the entries you want kept)")
     fm, body, path = _load(cluster, id)
     now = mnx_common.now_utc()
     for key in ("summary", "aliases", "domain", "confidence", "references", "mentions", "edges"):
