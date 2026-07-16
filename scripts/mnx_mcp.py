@@ -869,6 +869,25 @@ def info() -> dict[str, Any]:
             **({} if sdk_available() else {"sdk_error": _sdk_missing_message()})}
 
 
+def list_tool_names() -> list[str]:
+    """The registered tool names over a real in-process client session (never over the wire,
+    never starts a persistent process) — used by ``mnx_install.check_install`` (§7 Phase 5) so
+    the `mcp`/`anyio` imports stay confined to this module (risk R4)."""
+    if not sdk_available():
+        raise RuntimeError(_sdk_missing_message())
+    import anyio
+    from mcp.shared.memory import create_connected_server_and_client_session as client_session
+
+    server = create_server()
+
+    async def _list() -> list[str]:
+        async with client_session(server._mcp_server) as session:
+            tools = await session.list_tools()
+            return sorted(t.name for t in tools.tools)
+
+    return anyio.run(_list)
+
+
 def serve() -> int:
     """Run the stdio server (blocks). Pre-flight failures go to stderr — stdout is JSON-RPC."""
     try:

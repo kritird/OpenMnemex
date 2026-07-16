@@ -51,6 +51,9 @@ mcp = ["mcp>=1.2.0; python_version >= '3.10'"]
 # server itself needs the [mcp] extra — without it the binary exits 1 with the install
 # hint instead of a missing-command error.
 openmnemex-mcp = "openmnemex.mnx_mcp:main"
+# The per-agent installer (plan v2 §7 Phase 5, commit 5a). Needs no extras — it only
+# writes config files / shells out to each agent's own CLI.
+openmnemex = "openmnemex.mnx_install:main"
 
 [project.urls]
 Homepage = "https://github.com/kritird/OpenMnemex"
