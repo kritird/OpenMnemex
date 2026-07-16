@@ -111,9 +111,18 @@ def remove_json_server(path: Path, top_key: str) -> tuple[Optional[str], bool]:
 _TOML_HEADER_RE = re.compile(r"(?m)^\[(?P<name>[^\]\r\n]+)\][ \t]*$")
 
 
-def _toml_table_body(command: str, args: list[str]) -> str:
+def _toml_table_body(command: str, args: list[str], env: Optional[dict] = None) -> str:
     args_str = ", ".join(json.dumps(a) for a in args)
-    return f"command = {json.dumps(command)}\nargs = [{args_str}]\n"
+    body = f"command = {json.dumps(command)}\nargs = [{args_str}]\n"
+    if env:
+        # Inline table, not a nested `[table.env]` header: the merge/remove text-splice above
+        # keys purely on top-level `[table]` header lines, so a real nested header would get
+        # split off as a second "next header" on re-merge and orphaned. `env` (literal values)
+        # is the right field here — `env_vars` only forwards/whitelists names of variables that
+        # already exist in the host shell or a remote executor, it can't carry a literal value.
+        env_str = ", ".join(f"{k} = {json.dumps(v)}" for k, v in env.items())
+        body += f"env = {{ {env_str} }}\n"
+    return body
 
 
 def merge_toml_table(path: Path, table: str, body: str) -> tuple[str, bool]:
@@ -335,18 +344,14 @@ def _adapt_gemini_cli(scope: str, project_root: Path, pin_env: Optional[dict],
 def _adapt_codex(scope: str, project_root: Path, pin_env: Optional[dict],
                   uninstall: bool) -> InstallPlan:
     plan = InstallPlan(agent="codex", scope=scope)
-    if pin_env:
-        plan.notes.append(
-            "--pin-graph is not implemented for codex: config.toml's [mcp_servers.*] pins "
-            "*names* of host env vars to forward (env_vars = [...]), not literal values, and "
-            "that indirection isn't verified against current Codex docs — pin manually if needed.")
     cfg_path = (project_root / ".codex" / "config.toml" if scope == "project"
                 else Path.home() / ".codex" / "config.toml")
     table = f"mcp_servers.{SERVER_KEY}"
     if uninstall:
         new_text, changed = remove_toml_table(cfg_path, table)
     else:
-        new_text, changed = merge_toml_table(cfg_path, table, _toml_table_body(MCP_COMMAND, MCP_ARGS))
+        new_text, changed = merge_toml_table(
+            cfg_path, table, _toml_table_body(MCP_COMMAND, MCP_ARGS, env=pin_env))
     plan.changes.append(FileChange(path=cfg_path, new_text=new_text, changed=changed,
                                     label=f"MCP server entry ({cfg_path})"))
     plan.changes.append(_md_change(project_root / "AGENTS.md", uninstall=uninstall,
