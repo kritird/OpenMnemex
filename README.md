@@ -301,6 +301,35 @@ pip install pyyaml
 A complete walkthrough — from install to daily usage, with the hooks that fire automatically — is in
 [`docs/user-journey.md`](docs/user-journey.md). 🧭
 
+### Other agents
+
+Claude Code gets the full plugin experience above (auto-capture hooks, skills). Every other MCP-capable
+agent gets the same read/capture/promote loop over the stdio MCP server, wired up with one command:
+
+```bash
+uvx openmnemex install --agent <agent> [--project|--user] [--pin-graph]
+```
+
+| `--agent` | Config written | Tier |
+|---|---|---|
+| `opencode` | `opencode.json` + `AGENTS.md` block + `.opencode/plugin/mnemex.ts` (auto-capture hook) | Full |
+| `gemini-cli` | `.gemini/settings.json` / `~/.gemini/settings.json` + `GEMINI.md` block | Assisted |
+| `codex` | `.codex/config.toml` / `~/.codex/config.toml` + `AGENTS.md` block | Assisted |
+| `copilot` | VS Code `.vscode/mcp.json` (project scope only — no static user-scope file) | Assisted |
+| `cursor` | `.cursor/mcp.json` + `.cursor/rules/mnemex.mdc` | Assisted |
+| `claude-code` | `.mcp.json` (project) or `claude mcp add` (user) — an alternative to the plugin above | Full |
+
+"Assisted" tier means the host has to be told the read/capture/promote judgment procedure via the
+instruction file (`AGENTS.md`/`GEMINI.md`/rules block) rather than getting it as a Claude Code skill —
+see [`LIMITATIONS.md`](LIMITATIONS.md) for exactly what differs. `--pin-graph` bakes the current
+directory's resolved graph path into the server config so the agent doesn't need to `cd` there first;
+add `--dry-run` to preview the diff or `--check` to verify an existing install; `--uninstall` removes
+exactly the Mnemex entry/block and leaves everything else in the file untouched.
+
+> [!NOTE]
+> Not on PyPI yet — until then, `uvx --from git+https://github.com/kritird/OpenMnemex openmnemex
+> install --agent <agent> ...` runs it straight from this repo.
+
 ---
 
 ## 📚 Read the standard
