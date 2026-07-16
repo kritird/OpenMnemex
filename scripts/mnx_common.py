@@ -92,6 +92,43 @@ def plugin_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _data_dir(checkout_parts: tuple, package_name: str):
+    """A directory shipped alongside the engine — checkout-relative when present, else the
+    copy bundled as package data for a real ``pip``/``uvx`` install with no sibling checkout
+    (plan v2 §7, commit 5c). ``config/``, ``templates/``, and ``integrations/opencode/`` stay
+    at the repo root rather than moving under ``scripts/`` because the Claude Code plugin
+    surface reads them checkout-relative via ``${CLAUDE_PLUGIN_ROOT}/config/...``
+    (skills/mnx-init/SKILL.md and others) — so this is a fallback, not a relocation.
+
+    Returns a ``pathlib.Path`` in the checkout case or an ``importlib.resources`` Traversable
+    in the fallback case; both support ``/``, ``.is_file()``, ``.is_dir()``, ``.read_text()``,
+    which is all callers need.
+    """
+    checkout = plugin_root().parent.joinpath(*checkout_parts)
+    if checkout.is_dir():
+        return checkout
+    import importlib.resources
+    return importlib.resources.files(package_name)
+
+
+def config_dir():
+    """``config/`` — ``mnemex.config.md``, the stock front-matter+prose a fresh graph is
+    seeded with."""
+    return _data_dir(("config",), "openmnemex.data.config")
+
+
+def templates_dir():
+    """``templates/`` — scaffolding templates and the procedure sources
+    (``templates/procedures/``, plan v2 §5.4)."""
+    return _data_dir(("templates",), "openmnemex.data.templates")
+
+
+def opencode_plugin_dir():
+    """``integrations/opencode/`` — the OpenCode hook plugin source (``mnemex.ts``, plan v2
+    Phase 4)."""
+    return _data_dir(("integrations", "opencode"), "openmnemex.data.integrations.opencode")
+
+
 # --- time -------------------------------------------------------------------
 
 def now_utc() -> str:

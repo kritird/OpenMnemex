@@ -63,9 +63,32 @@ Issues = "https://github.com/kritird/OpenMnemex/issues"
 [tool.setuptools]
 # The flat scripts/ engine IS the package: one directory, two import contexts — see
 # scripts/__init__.py (the bridge). Console entry points arrive with the modules they
-# run (openmnemex-mcp landed with Phase 1, the installer CLI comes in Phase 5);
-# templates/ ships as package data in Phase 5 (plan v2 §7, commit 5c).
-packages = ["openmnemex"]
+# run (openmnemex-mcp landed with Phase 1, the installer CLI comes in Phase 5).
+#
+# config/, templates/, and integrations/opencode/ stay at the repo root (not moved under
+# scripts/) because the Claude Code plugin surface reads them checkout-relative via
+# ${CLAUDE_PLUGIN_ROOT}/config/... (skills/mnx-init/SKILL.md and others) — moving them would
+# break that surface. Instead they're *also* declared here as three namespace subpackages
+# (openmnemex.data.*) purely so a real `pip`/`uvx` install (no checkout) ships a copy inside
+# the wheel; mnx_common.repo_data_dir() (plan v2 §7, commit 5c) prefers the checkout-relative
+# path when present and falls back to this bundled copy via importlib.resources otherwise.
+# No __init__.py needed anywhere: `openmnemex` itself is a regular package (scripts/__init__.py)
+# but `data` and its children are left as implicit PEP 420 namespace packages — pure data,
+# never imported as code, so there's nothing an __init__.py would buy.
+packages = [
+  "openmnemex",
+  "openmnemex.data.config",
+  "openmnemex.data.templates",
+  "openmnemex.data.integrations.opencode",
+]
 
 [tool.setuptools.package-dir]
 openmnemex = "scripts"
+"openmnemex.data.config" = "config"
+"openmnemex.data.templates" = "templates"
+"openmnemex.data.integrations.opencode" = "integrations/opencode"
+
+[tool.setuptools.package-data]
+"openmnemex.data.config" = ["*"]
+"openmnemex.data.templates" = ["**/*"]
+"openmnemex.data.integrations.opencode" = ["*"]

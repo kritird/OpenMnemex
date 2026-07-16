@@ -40,18 +40,13 @@ _CONFIG_FILE = "mnemex.config.md"
 
 # --- template sources (single-sourced with the SKILL's hand path) -------------
 
-def _repo_file(*parts: str) -> Path:
-    """A file shipped alongside the engine (config/ and templates/ live next to scripts/)."""
-    return mnx_common.plugin_root().parent.joinpath(*parts)
-
-
 def config_defaults() -> str:
     """The stock ``mnemex.config.md`` (front-matter + prose) a fresh graph is seeded with."""
-    return _repo_file("config", _CONFIG_FILE).read_text(encoding="utf-8")
+    return mnx_common.config_dir().joinpath(_CONFIG_FILE).read_text(encoding="utf-8")
 
 
 def _template(name: str) -> str:
-    return _repo_file("templates", name).read_text(encoding="utf-8")
+    return mnx_common.templates_dir().joinpath(name).read_text(encoding="utf-8")
 
 
 def _router_index(title: str, description: str, children: list[tuple[str, str]]) -> str:

@@ -309,7 +309,9 @@ def _adapt_opencode(scope: str, project_root: Path, pin_env: Optional[dict],
                                     label="instruction block (AGENTS.md)"))
     if scope == "project":
         plugin_dst = project_root / ".opencode" / "plugin" / "mnemex.ts"
-        plugin_src = mnx_common.plugin_root().parent / "integrations" / "opencode" / "mnemex.ts"
+        # Checkout-relative first, falls back to the bundled package copy (plan v2 §7,
+        # commit 5c) — so this resolves in both a repo checkout and a real pip/uvx install.
+        plugin_src = mnx_common.opencode_plugin_dir().joinpath("mnemex.ts")
         if uninstall:
             if plugin_dst.is_file():
                 plan.changes.append(FileChange(path=plugin_dst, new_text=None, changed=True,
@@ -320,10 +322,9 @@ def _adapt_opencode(scope: str, project_root: Path, pin_env: Optional[dict],
             plan.changes.append(FileChange(path=plugin_dst, new_text=new_text, changed=changed,
                                             label="OpenCode hook plugin (.opencode/plugin/mnemex.ts)",
                                             binary_src=plugin_src))
-        else:
+        else:  # pragma: no cover - only unreachable if package data itself is missing/corrupt
             plan.notes.append(
-                f"OpenCode hook plugin source not found at {plugin_src} (only available from a "
-                "repo checkout until commit 5c ships it as package data) — skipped; the MCP "
+                f"OpenCode hook plugin source not found at {plugin_src} — skipped; the MCP "
                 "entry + AGENTS.md block above still give read/capture/promote on this host.")
     return plan
 

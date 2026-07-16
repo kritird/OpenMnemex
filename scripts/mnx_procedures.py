@@ -43,16 +43,16 @@ TARGETS = ("claude", "mcp")  # placeholder-substitution targets; "digest" is a s
                               # standalone 2-4 line blurb per procedure (see render_digest)
 
 
-def _procedures_dir() -> Path:
-    return mnx_common.plugin_root().parent / "templates" / "procedures"
+def _procedures_dir():
+    return mnx_common.templates_dir().joinpath("procedures")
 
 
-def _core_path(name: str) -> Path:
-    return _procedures_dir() / f"{name}.core.md"
+def _core_path(name: str):
+    return _procedures_dir().joinpath(f"{name}.core.md")
 
 
-def _fragment_path(proc: str, key: str, target: str) -> Path:
-    return _procedures_dir() / "fragments" / proc / f"{key}.{target}.md"
+def _fragment_path(proc: str, key: str, target: str):
+    return _procedures_dir().joinpath("fragments", proc, f"{key}.{target}.md")
 
 
 def _fragment(proc: str, key: str, target: str) -> str:
@@ -103,8 +103,8 @@ def render_mcp_prompt(name: str) -> str:
     return render_core(name, "mcp", include_frontmatter=False)
 
 
-def _digest_path(name: str) -> Path:
-    return _procedures_dir() / "fragments" / "_digests" / f"{name}.md"
+def _digest_path(name: str):
+    return _procedures_dir().joinpath("fragments", "_digests", f"{name}.md")
 
 
 def render_digest(name: str) -> str:
