@@ -192,50 +192,79 @@ _DEGRADED_HINTS = {
     "skipped-unpushed": "run promote_retry_push",
 }
 
-_session_state: dict[str, Any] = {"synced": False, "sync": None}
+# Keyed by graph_slug(), NOT a single global (F8, onboarding plan Phase 5 prereq): a mid-session
+# use_graph() switch resolves to a DIFFERENT binding, which must get its OWN sync verdict rather
+# than reusing (or clobbering) whatever the previously-bound graph already cached.
+_session_state: dict[str, dict[str, Any]] = {}
+
+# Whether this process has shown the once-per-session `needs_graph_confirm` signal yet (Phase 5a).
+# Separate from _session_state because confirming is a SESSION-level fact ("the human has been
+# told which graph"), not a per-graph one — switching graphs via use_graph re-confirms implicitly
+# (that IS the human choosing), it does not reset this back to False.
+_confirm_state: dict[str, bool] = {"shown": False}
 
 
 def reset_session_state() -> None:
-    """Forget the once-per-process sync (tests; a real server process never needs it)."""
-    _session_state["synced"] = False
-    _session_state["sync"] = None
+    """Forget the once-per-process sync + confirm state (tests; a real server process never
+    needs this — it dies with the session)."""
+    _session_state.clear()
+    _confirm_state["shown"] = False
+
+
+def mark_graph_confirmed() -> None:
+    """Suppress the `needs_graph_confirm` signal for the rest of this process: establishing a
+    binding (init_graph) or explicitly switching one (use_graph) already IS the human's confirmed
+    choice — asking them to re-confirm the very graph they just picked would be pure noise."""
+    _confirm_state["shown"] = True
 
 
 def _resolve_binding() -> "mnx_binding.Binding":
     try:
-        binding = mnx_binding.resolve()
+        binding = mnx_binding.resolve(session_id=session_id())
     except Exception as exc:  # malformed binding file — report, don't traceback
         raise ToolError("binding-error", str(exc),
                         "fix or remove the malformed binding file") from exc
     if binding is None:
         raise ToolError("unresolved", "No Mnemex graph configured for this project or user.",
-                        "run init_graph")
+                        "run init_graph, or call list_graphs if you expect one to already exist")
     return binding
 
 
 def ensure_synced() -> dict[str, Any]:
-    """Resolve the binding and sync the graph clone, once per server process.
+    """Resolve the binding and sync the graph clone, once per graph per server process.
 
-    Returns ``{binding, sync}`` where ``sync`` carries ``degraded``/``offline_degraded``
-    flags for tools to surface. A hard sync failure (missing local folder, clone failed
-    with no local copy) raises ToolError and does NOT cache, so the next call retries.
+    Returns ``{binding, sync}`` plus, when applicable, ``needs_graph_confirm`` (Phase 5a — the
+    first graph-touching call this process has made, at all: "tell the user which graph and let
+    them pick another") and ``override_notice`` (Phase 5b — a session override is active and
+    differs from what this project/user would otherwise resolve; re-attached on EVERY call, not
+    just the first, since it is a standing "you are not where you think" warning, not a one-shot
+    confirmation). ``sync`` carries ``degraded``/``offline_degraded`` flags for tools to surface.
+    A hard sync failure (missing local folder, clone failed with no local copy) raises ToolError
+    and does NOT cache, so the next call retries.
     """
     binding = _resolve_binding()
-    if _session_state["synced"]:
-        return {"binding": binding, "sync": _session_state["sync"]}
-    result = mnx_binding.sync(binding)
-    action = result.get("action")
-    if action == "error":
-        raise ToolError("sync-failed", result.get("message", "Graph sync failed."),
-                        "check the graph path/remote or run init_graph")
-    sync_info: dict[str, Any] = {"action": action, "message": result.get("message"),
-                                 "degraded": action in _DEGRADED_HINTS,
-                                 "offline_degraded": action == "offline"}
-    if _DEGRADED_HINTS.get(action):
-        sync_info["next_step"] = _DEGRADED_HINTS[action]
-    _session_state["synced"] = True
-    _session_state["sync"] = sync_info
-    return {"binding": binding, "sync": sync_info}
+    slug = binding.slug()
+    cached = _session_state.get(slug)
+    if cached is None:
+        result = mnx_binding.sync(binding)
+        action = result.get("action")
+        if action == "error":
+            raise ToolError("sync-failed", result.get("message", "Graph sync failed."),
+                            "check the graph path/remote or run init_graph")
+        cached = {"action": action, "message": result.get("message"),
+                  "degraded": action in _DEGRADED_HINTS,
+                  "offline_degraded": action == "offline"}
+        if _DEGRADED_HINTS.get(action):
+            cached["next_step"] = _DEGRADED_HINTS[action]
+        _session_state[slug] = cached
+    out: dict[str, Any] = {"binding": binding, "sync": cached}
+    if not _confirm_state["shown"]:
+        _confirm_state["shown"] = True
+        out["needs_graph_confirm"] = True
+    notice = mnx_binding.override_mismatch(binding)
+    if notice:
+        out["override_notice"] = notice
+    return out
 
 
 # --- the tool guard ---------------------------------------------------------------
@@ -260,6 +289,11 @@ def tool_guard(sync_first: bool = True) -> Callable:
                     if session["sync"].get("degraded"):
                         payload.setdefault("degraded", True)
                         payload.setdefault("sync", session["sync"])
+                    if session.get("needs_graph_confirm"):
+                        payload.setdefault("needs_graph_confirm", True)
+                        payload.setdefault("resolution", session["binding"].resolution_line())
+                    if session.get("override_notice"):
+                        payload.setdefault("override_notice", session["override_notice"])
                     return ok(payload)
                 return ok(fn(*args, **kwargs))
             except ToolError as te:
@@ -295,7 +329,9 @@ def _bind_status(binding: Any = None, sync: Any = None) -> dict[str, Any]:
 @tool_guard()
 def _status(binding: Any = None, sync: Any = None) -> dict[str, Any]:
     """The full at-a-glance snapshot: tiers per team, staged/held counts, pending stamps, health."""
-    return mnx_status.status()
+    # session_id() so a Phase 5b override is resolved consistently with tool_guard's OWN binding
+    # (`binding`, above) — resolving without it here could silently report a DIFFERENT graph.
+    return mnx_status.status(session_id=session_id())
 
 
 @tool_guard()
@@ -349,11 +385,14 @@ def _init_graph(remote: Optional[str] = None, path: Optional[str] = None,
         # user default (write_user_default refuses without force) — reported, not fatal.
         result["user_default"] = mnx_binding.write_user_default(
             path=proposal["path"], default_team=proposal["team"])
+        mark_graph_confirmed()  # Phase 5a: creating it IS confirming it — don't re-ask next call
         return result
     try:
-        return mnx_init.init_graph(remote=remote, path=path, team=team, org=org)
+        result = mnx_init.init_graph(remote=remote, path=path, team=team, org=org)
     except mnx_init._InitError as ie:
         raise ToolError(ie.code, str(ie), ie.action) from ie
+    mark_graph_confirmed()
+    return result
 
 
 @tool_guard(sync_first=False)
@@ -362,6 +401,38 @@ def _list_graphs() -> dict[str, Any]:
     with a scan of the remote-clone cache, each flagged `present`. Read-only, no binding
     required — works before init_graph has ever been called."""
     return {"graphs": mnx_binding.list_graphs()}
+
+
+@tool_guard(sync_first=False)
+def _use_graph(slug: str) -> dict[str, Any]:
+    """Switch THIS session to a different known graph (onboarding plan Phase 5b) — a session
+    override that outranks the project/user default until cleared or it expires (TTL-bounded;
+    never survives past this session). `slug` must be one `list_graphs` returned. Does not
+    sync-first against the OLD binding (this call is itself establishing a new one, like
+    init_graph); refuses with a `busy` action if the CURRENT graph has an open promote lock /
+    in-flight plan (finish or abort it first — switching out from under it would strand it)."""
+    graphs = {g["slug"]: g for g in mnx_binding.list_graphs()}
+    g = graphs.get(slug)
+    if g is None:
+        raise ToolError("unknown-slug", f"No known graph with slug '{slug}'.",
+                        "call list_graphs to see valid slugs")
+    kwargs = {"remote": g["location"]} if g["kind"] == "git-remote" else {"path": g["location"]}
+    result = mnx_binding.set_session_override(session_id(), **kwargs)
+    if not result.get("ok"):
+        raise ToolError("switch-blocked", result.get("message", "Could not switch graphs."),
+                        "resolve the blocker, then retry use_graph")
+    reset_session_state()  # F8: forget any cached sync verdict — the new graph must sync fresh
+    mark_graph_confirmed()  # an explicit switch IS the human's confirmed choice
+    return result
+
+
+@tool_guard(sync_first=False)
+def _clear_graph_override() -> dict[str, Any]:
+    """Drop this session's graph override (onboarding plan Phase 5b), reverting to normal
+    project/env/user resolution. Not-overridden is a no-op, not an error."""
+    result = mnx_binding.clear_session_override(session_id())
+    reset_session_state()  # the effective binding may change — forget any cached sync verdict
+    return result
 
 
 # --- tool bodies (Phase 1 commit 1c: read) ------------------------------------------
@@ -797,6 +868,24 @@ def register_tools(server: "FastMCP") -> None:
                              "pick or confirm which graph to use.")
     def list_graphs() -> dict[str, Any]:
         return _list_graphs()
+
+    @server.tool(name="use_graph",
+                 description="Switch THIS session to a different known graph (slug from "
+                             "list_graphs) — a session-scoped override that outranks the "
+                             "project/user default until cleared or its TTL expires; never "
+                             "durable, never survives past this session. Use when the user "
+                             "responds to `needs_graph_confirm` (or an `override_notice`) by "
+                             "picking a different graph than the one resolved. Refuses with "
+                             "action=busy if the CURRENT graph has an open promote lock / "
+                             "in-flight plan — finish or abort it first.")
+    def use_graph(slug: str) -> dict[str, Any]:
+        return _use_graph(slug)
+
+    @server.tool(name="clear_graph_override",
+                 description="Drop this session's graph override (see use_graph), reverting to "
+                             "normal project/env/user resolution. Not-overridden is a no-op.")
+    def clear_graph_override() -> dict[str, Any]:
+        return _clear_graph_override()
 
     @server.tool(name="read_frontier",
                  description="Org head + team heads (one-line descriptions + child cluster "

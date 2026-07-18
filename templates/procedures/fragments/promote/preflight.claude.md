@@ -1,5 +1,6 @@
 ## Preflight
-1. **Locate + sync:** `mnx_binding.py status`. If `resolved` is false → **STOP**, point at
+1. **Locate + sync:** `mnx_binding.py status --session <sid>` (the session id from session-start, if
+   you have one — see mnx-init step 1; honors a mid-session graph switch). If `resolved` is false → **STOP**, point at
    `/mnemex:mnx-init`. **Echo the resolved graph before merging** — this is the irreversible write, so
    confirm the target: show the `resolution` line, e.g. *"Promoting into **payments-knowledge** (source:
    project .mnemex.md)."* If `default_fallback` is true, flag it prominently and **confirm with the user

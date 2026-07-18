@@ -33,7 +33,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -189,6 +189,8 @@ class Binding:
             detail = "source: environment variable"
         elif kind == "user":
             detail = "source: user default — no project binding found, using your personal graph"
+        elif kind == "override":
+            detail = "source: session override — chosen this session, outranks the project/user default"
         else:
             detail = f"source: {self.source}"
         return f"{self.display_name()} ({detail})"
@@ -329,6 +331,153 @@ def list_graphs() -> list[dict[str, Any]]:
     return sorted(out, key=lambda r: r["last_used"], reverse=True)
 
 
+# --- session override (mid-session graph switch — onboarding plan Phase 5b) --
+#
+# A session may point itself at a DIFFERENT graph than project/env/user would resolve —
+# `<mnemex_home>/session-override/<session-id>.md`, same front-matter shape as `.mnemex.md`/
+# `config.md` (parsed via the same `_binding_from`), plus an `expires` timestamp. It OUTRANKS
+# every other resolution source (the dangerous part — a stale choice would otherwise silently
+# misroute a capture/promote), so it is deliberately made safe three ways: a bounded TTL (belt),
+# an explicit clear at Claude's SessionEnd (suspenders — see mnx_hooks.core_session_end), and
+# `override_mismatch()` giving callers a one-line "writing into Y, NOT X" marker to echo whenever
+# the override differs from what this project/user would otherwise get. Never persisted beyond
+# that: there is no way to make an override durable short of running mnx-init for real.
+
+_SESSION_OVERRIDE_TTL_HOURS = 12.0
+
+
+def session_override_root() -> Path:
+    return mnx_common.mnemex_home() / "session-override"
+
+
+def _safe_session_id(session_id: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "-", session_id or "") or "default"
+
+
+def session_override_path(session_id: str) -> Path:
+    return session_override_root() / f"{_safe_session_id(session_id)}.md"
+
+
+def _render_session_override(path: Optional[str], remote: Optional[str], expires: str) -> str:
+    lines = ["---",
+             "# Mnemex SESSION override — ephemeral, NOT a durable binding. Safe to delete.",
+             "# Outranks the project .mnemex.md / user config for THIS session only, until it",
+             "# expires below or the session ends.",
+             "#",
+             "# Exactly one of graph_remote / graph_path is set below."]
+    if remote:
+        lines += [f"graph_remote: {remote}", "graph_path:"]
+    else:
+        lines += ["graph_remote:", f"graph_path: {path}"]
+    lines += [f"expires: {expires}", "---", "",
+              "# Mnemex session override", "",
+              "This session chose a different graph than the project/user default. It reverts "
+              "automatically when this file expires or the session ends. Delete this file (or "
+              "run `mnx_binding.py clear-graph-override`) to revert immediately.", ""]
+    return "\n".join(lines)
+
+
+def _busy_team(binding: "Binding") -> Optional[str]:
+    """First team dir under `binding`'s graph with an open promote lock or in-flight plan, else
+    None. Best-effort: any error scanning -> not busy (fail open; mnx_lock's own guards still
+    apply at actual promote time — this is only an early, friendlier refusal for a switch that
+    would otherwise strand a mid-transaction team)."""
+    try:
+        import mnx_lock
+        root = Path(binding.graph_root())
+        if not root.is_dir():
+            return None
+        for team_dir in sorted(p for p in root.iterdir() if p.is_dir() and p.name.startswith("team-")):
+            if mnx_lock.held(str(team_dir)) or mnx_lock.in_progress(str(team_dir)):
+                return team_dir.name
+    except Exception:
+        return None
+    return None
+
+
+def set_session_override(session_id: str, *, path: Optional[str] = None,
+                         remote: Optional[str] = None,
+                         ttl_hours: float = _SESSION_OVERRIDE_TTL_HOURS) -> dict[str, Any]:
+    """Point THIS session at a different graph than project/env/user would resolve — the
+    mid-session graph switch (Phase 5b). Set exactly one of path / remote.
+
+    Refuses (``{"ok": false, "action": "busy", ...}``) while a promote lock or in-flight plan is
+    open on the graph CURRENTLY effective for this session — switching out from under a
+    mid-transaction team would strand it; the caller must finish or abort that promote first.
+    """
+    if bool(path) == bool(remote):
+        raise ValueError("set_session_override needs exactly one of path / remote.")
+    current = resolve(session_id=session_id)
+    if current is not None:
+        busy = _busy_team(current)
+        if busy:
+            return {"ok": False, "action": "busy", "team": busy,
+                    "message": (f"Team '{busy}' has an open promote lock / in-flight plan on the "
+                                f"current graph ({current.display_name()}) — finish or abort it "
+                                "(mnx-promote) before switching graphs.")}
+    if path:
+        path = os.path.abspath(os.path.expanduser(str(path)))
+    target = session_override_path(session_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    expires_dt = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+    expires = expires_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    target.write_text(_render_session_override(path, remote, expires), encoding="utf-8")
+    b = Binding(f"override:{target}", remote=remote, local_path=path)
+    return {"ok": True, "action": "overridden", "session": session_id, "slug": b.slug(),
+            "graph": b.display_name(), "expires": expires, "path": str(target)}
+
+
+def clear_session_override(session_id: str) -> dict[str, Any]:
+    """Drop the session override, reverting to normal project/env/user resolution. Missing file
+    is a no-op, not an error."""
+    try:
+        session_override_path(session_id).unlink(missing_ok=True)
+        return {"ok": True, "action": "cleared", "session": session_id}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _read_session_override(session_id: str) -> Optional[Binding]:
+    """The active override for `session_id`, or None if absent/expired/malformed.
+
+    Never raises — a corrupt override file must fail OPEN to normal resolution, not break every
+    tool call riding on resolve(). An expired file is best-effort deleted so it stops being
+    reparsed on every call, but a failure to delete it is not fatal (still ignored either way).
+    """
+    path = session_override_path(session_id)
+    if not path.is_file():
+        return None
+    try:
+        fm = read_frontmatter(path)
+        expires = fm.get("expires")
+        if expires and mnx_common.parse_ts(str(expires)) < datetime.now(timezone.utc):
+            try:
+                path.unlink()
+            except Exception:
+                pass
+            return None
+        return _binding_from(fm.get, f"override:{path}")
+    except Exception:
+        return None
+
+
+def override_mismatch(binding: "Binding", start_dir: Optional[str] = None) -> Optional[str]:
+    """When `binding` is a session override AND differs from what project/env/user would resolve
+    here, a one-line 'writing into Y, NOT X' marker (Phase 5b) — the required echo so an override
+    never silently misroutes a read/capture/promote. None when `binding` is not an override, or
+    when it happens to match the project/env/user graph anyway (nothing to warn about)."""
+    if binding.source_kind() != "override":
+        return None
+    other = resolve_project_only(start_dir)
+    if other is None:
+        return (f"Mnemex: writing into {binding.display_name()} (session override) — this "
+                f"project/user has no other graph bound.")
+    if other.slug() == binding.slug():
+        return None
+    return (f"Mnemex: writing into {binding.display_name()} (session override), NOT "
+            f"{other.display_name()} (this project's/user's normal graph).")
+
+
 def _binding_from(getter: Callable[[str], Any], source: str) -> Optional[Binding]:
     path = getter("graph_path")
     remote = getter("graph_remote")
@@ -355,7 +504,14 @@ def find_project_binding(start: Path) -> Optional[Path]:
     return None
 
 
-def resolve(start_dir: Optional[str] = None) -> Optional[Binding]:
+def resolve_project_only(start_dir: Optional[str] = None) -> Optional[Binding]:
+    """The project > env > user chain, WITHOUT considering any session override.
+
+    Split out from `resolve()` so a caller can ask "what would this project/user resolve to on
+    its own" — `override_mismatch()` uses it to detect when an active override disagrees with
+    the project's own graph, and `set_session_override` uses it (via `resolve`) to find the graph
+    a switch is moving AWAY from.
+    """
     start = Path(start_dir or os.getcwd())
 
     proj = find_project_binding(start)
@@ -377,6 +533,22 @@ def resolve(start_dir: Optional[str] = None) -> Optional[Binding]:
             return b
 
     return None
+
+
+def resolve(start_dir: Optional[str] = None, session_id: Optional[str] = None) -> Optional[Binding]:
+    """The active binding: a session override (Phase 5b, when `session_id` is given and one is
+    set + unexpired) outranks the normal project > env > user chain (`resolve_project_only`).
+
+    `session_id` is opt-in per caller (never sniffed from the environment here) — each host
+    decides what session id means for it: the MCP server's `$MNEMEX_SESSION_ID` (mnx_mcp.
+    session_id()), or Claude's per-event `session_id` threaded in by mnx_hooks. Omit it (the
+    default) to resolve exactly as before overrides existed — e.g. plain CLI/test usage.
+    """
+    if session_id:
+        override = _read_session_override(session_id)
+        if override is not None:
+            return override
+    return resolve_project_only(start_dir)
 
 
 # --- user-default persistence (guided setup) --------------------------------
@@ -768,20 +940,22 @@ def _arg_after(argv: list[str], flag: str) -> Optional[str]:
 
 
 _USAGE = [
-    'mnx_binding.py resolve                          — the active binding (project > user > env)',
-    'mnx_binding.py sync                             — materialize/refresh the graph clone (never destroys local work)',
-    'mnx_binding.py status                           — binding + clone-present + unpushed state',
+    'mnx_binding.py resolve [--session <id>]         — the active binding (override > project > user > env)',
+    'mnx_binding.py sync [--session <id>]            — materialize/refresh the graph clone (never destroys local work)',
+    'mnx_binding.py status [--session <id>]          — binding + clone-present + unpushed state',
     'mnx_binding.py unpushed-state                   — committed-but-unpushed promote state',
     'mnx_binding.py graph-root | staging-path        — print the resolved path (exit 2 if unbound)',
     'mnx_binding.py probe-remote --remote <url>      — read-only reachability + auth pre-flight',
     'mnx_binding.py write-user-default --path <dir> | --remote <url> [--force] [--default-team <t>]'
     '  — write the <mnemex_home>/config.md user default (refuses to clobber without --force)',
     'mnx_binding.py list-graphs                      — every known graph (registry + clone cache), each flagged present',
+    'mnx_binding.py use-graph <slug> [--session <id>]         — session-scoped override to a known graph (outranks project/user; TTL-bounded)',
+    'mnx_binding.py clear-graph-override [--session <id>]     — drop the session override, revert to normal resolution',
     'mnx_binding.py persist [--message <m>]          — commit (+push) graph changes',
     'mnx_binding.py push                             — push the current branch',
 ]
 _FLAGS = {"--remote": True, "--message": True, "--path": True, "--force": False,
-          "--default-team": True, "--author": True}
+          "--default-team": True, "--author": True, "--session": True}
 
 
 def _main(argv: list[str]) -> int:
@@ -807,6 +981,25 @@ def _main(argv: list[str]) -> int:
     if cmd == "list-graphs":  # discovery — must work with no binding at all
         return _emit({"graphs": list_graphs()}, EXIT_OK)
 
+    if cmd == "use-graph":  # session-scoped switch (Phase 5b) — must work with no binding at all
+        slug = argv[2] if len(argv) > 2 and not argv[2].startswith("--") else None
+        if not slug:
+            return _emit({"error": "use-graph needs a <slug> (see mnx_binding.py list-graphs)"},
+                         EXIT_ERROR)
+        sid = _arg_after(argv, "--session") or "default"
+        known = {g["slug"]: g for g in list_graphs()}
+        g = known.get(slug)
+        if g is None:
+            return _emit({"error": f"unknown slug: {slug}",
+                          "action": "run mnx_binding.py list-graphs to see valid slugs"}, EXIT_ERROR)
+        kwargs = {"remote": g["location"]} if g["kind"] == "git-remote" else {"path": g["location"]}
+        res = set_session_override(sid, **kwargs)
+        return _emit(res, EXIT_OK if res.get("ok") else EXIT_ERROR)
+
+    if cmd == "clear-graph-override":  # must work with no binding at all
+        sid = _arg_after(argv, "--session") or "default"
+        return _emit(clear_session_override(sid), EXIT_OK)
+
     if cmd == "write-user-default":  # runs BEFORE a binding exists — must not call resolve()
         path = _arg_after(argv, "--path")
         remote = _arg_after(argv, "--remote")
@@ -818,8 +1011,9 @@ def _main(argv: list[str]) -> int:
                                  author=_arg_after(argv, "--author"))
         return _emit(res, EXIT_OK if res.get("ok") else EXIT_ERROR)
 
+    sid = _arg_after(argv, "--session")
     try:
-        b = resolve()
+        b = resolve(session_id=sid)
     except Exception as exc:  # malformed binding / parse error — report, don't traceback
         return _emit({"resolved": False, "error": "binding-error", "message": str(exc)},
                      EXIT_ERROR)
@@ -840,11 +1034,19 @@ def _main(argv: list[str]) -> int:
         print(b.graph_root())
         return EXIT_OK
     if cmd == "resolve":
-        return _emit({"resolved": True, **b.to_dict()}, EXIT_OK)
+        out = {"resolved": True, **b.to_dict()}
+        notice = override_mismatch(b)
+        if notice:
+            out["override_notice"] = notice
+        return _emit(out, EXIT_OK)
     if cmd == "sync":
         res = sync(b)
         code = EXIT_ERROR if res.get("action") == "error" else EXIT_OK
-        return _emit({"resolved": True, **b.to_dict(), **res}, code)
+        out = {"resolved": True, **b.to_dict(), **res}
+        notice = override_mismatch(b)
+        if notice:
+            out["override_notice"] = notice
+        return _emit(out, code)
     if cmd == "status":
         root = Path(b.graph_root())
         present = _is_git_repo(root) if b.remote else root.is_dir()
@@ -854,7 +1056,11 @@ def _main(argv: list[str]) -> int:
                 extra = unpushed_state(b)
             except Exception:
                 extra = {}
-        return _emit({"resolved": True, **b.to_dict(), "clone_present": present, **extra}, EXIT_OK)
+        out = {"resolved": True, **b.to_dict(), "clone_present": present, **extra}
+        notice = override_mismatch(b)
+        if notice:
+            out["override_notice"] = notice
+        return _emit(out, EXIT_OK)
     if cmd == "unpushed-state":
         return _emit({"resolved": True, **b.to_dict(), **unpushed_state(b)}, EXIT_OK)
     if cmd == "persist":

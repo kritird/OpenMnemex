@@ -269,6 +269,73 @@ Exposed as:
 - **`mnx-status`** folds the same list into its `known_graphs` field, so a status check surfaces
   graphs used elsewhere even when the current project has no binding of its own.
 
+## ✅ Session graph confirm & override (Phase 5)
+
+Resolution answers *"which graph, deterministically"* — but a silent, correct-on-paper resolution can
+still be the WRONG graph for what the user meant right now (a stale cwd, a personal default they forgot
+they had, a repo shared by two unrelated efforts). Phase 5 adds two things on top of resolution: a
+**confirm** the user sees before the first read/write each session, and a **session-scoped override** so
+they can point at a different graph without editing any binding file.
+
+### 🙋 Confirm, once per session
+
+- **Claude:** the SessionStart hook (`mnx_hooks.core_session_start`) states the resolved
+  `resolution_line()` up front and names the switch commands below, folded into the same message that
+  asks for Mnemex consent — one combined ask, not two. Enter/"yes" accepts the resolved graph; asking for
+  a different one routes to `use-graph` before consent is recorded. Composed **before** Phase 3's
+  empty-graph fork: confirm the graph first, then (if it turns out to be empty) the fill offer follows —
+  two ordered steps, never a collision.
+- **MCP / Assisted hosts** (no session-start hook): the FIRST graph-touching tool call each server
+  process makes carries `needs_graph_confirm: true` plus `resolution` in its result — a best-effort
+  echo, not a hard gate (the call already executed; there is no way to pause an MCP tool call mid-flight
+  the way a hook can inject context before any work happens). The generated instruction block tells the
+  host model to relay it and offer `list_graphs` / `use_graph` when it appears. Fires once per process,
+  same "once per session" contract as the sync-once guard.
+- **When nothing resolves at all** (F1), this becomes pick-or-setup instead of a bare "run mnx-init":
+  Claude's onboarding notice and the MCP `unresolved` error both check `list_graphs()` first and name
+  known graphs (with the `use-graph` command to bind one) before falling back to plain setup guidance.
+
+### 🔀 Session override — switching mid-session
+
+A session may point itself at a graph other than what project/env/user resolution would give it:
+
+```
+mnx_binding.py use-graph <slug> --session <sid>            # slug from list-graphs
+mnx_binding.py clear-graph-override --session <sid>         # revert to normal resolution
+```
+
+MCP tools: `use_graph(slug)` / `clear_graph_override()` (the session id is `$MNEMEX_SESSION_ID` /
+`"default"`, same as the mute marker). Claude: the same CLI commands, with `<sid>` the id the
+SessionStart hook showed the agent — a skill invocation is a fresh subprocess with no ambient session
+id, so every preflight that wants override awareness must pass `--session <sid>` explicitly (all nine
+skills' preflight lines do).
+
+**Storage.** `<mnemex_home>/session-override/<session-id>.md` — same front-matter shape as `.mnemex.md`
+(`graph_remote` **or** `graph_path`), plus an `expires` timestamp. Parsed by the same `_binding_from`
+helper every other source uses; `Binding.source_kind()` reports `"override"`.
+
+**Precedence.** An override OUTRANKS project `.mnemex.md`, env vars, and the user default — the
+dangerous part, since a stale choice would otherwise silently misroute a capture or promote. It is made
+safe three ways:
+1. **TTL** — 12 hours by default (`mnx_binding._SESSION_OVERRIDE_TTL_HOURS`); an expired file is
+   ignored and best-effort deleted the next time anything tries to read it.
+2. **Explicit clear at session end** — Claude's SessionEnd hook deletes the override file alongside the
+   mute/consent/stop markers it already tidies up; an override never intentionally outlives a session.
+3. **The mismatch marker** — `mnx_binding.override_mismatch(binding)` returns a one-line *"writing into
+   Y, NOT X"* warning whenever the active binding is an override that disagrees with what
+   `resolve_project_only()` would give this project/user on its own. Every read/status surface that
+   resolves a binding echoes it when present (`override_notice` in `status`/`resolve`/`sync`'s JSON and
+   in every `sync_first` MCP tool result) — an override is never silent about being an override.
+
+**The busy guard.** `use_graph` (`mnx_binding.set_session_override`) refuses with `action: "busy"` if the
+graph currently in effect has any team with an open promote lock (`mnx_lock.held`) or in-flight plan
+(`mnx_lock.in_progress`) — switching out from under a mid-transaction team would strand it. Finish or
+abort (`mnx-promote`) first.
+
+**Never durable.** There is no way to make an override stick beyond its TTL/session short of running
+`/mnemex:mnx-init` for real (write a project `.mnemex.md` or the user default). That is deliberate — a
+session override is for "just this once," not a quiet permanent re-point.
+
 ## 🔑 Auth & branch
 
 - **Auth.** Clone/push rely on the author's ambient git credentials (SSH agent or HTTPS helper). The

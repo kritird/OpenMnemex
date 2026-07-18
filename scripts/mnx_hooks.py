@@ -102,6 +102,10 @@ class HookOutcome:
 # Code expands it. Foreign hosts pass their own base (e.g. `python3 -m openmnemex.mnx_hooks`).
 CLAUDE_HOOK_CMD_BASE = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_hooks.py"'
 
+# Same idea, for the graph-confirm/switch commands (Phase 5), which live on mnx_binding.py —
+# a different script, so it needs its own overridable base.
+CLAUDE_BINDING_CMD_BASE = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py"'
+
 
 def _session_nags(binding) -> list[str]:
     """One-line nags for session start / end — staged-pending and consolidation-overdue.
@@ -281,6 +285,10 @@ def _onboard_outcome() -> HookOutcome:
     Without this, a fresh install is completely silent at the one moment the user most
     needs direction. Fires at most once ever (a durable marker under the mnemex home), so
     it never nags users who run Mnemex in projects that intentionally have no graph.
+
+    Pick-or-setup (onboarding plan Phase 5a): when other graphs are already known (the Phase 4
+    registry/cache-scan), name them and point at binding one instead of assuming a fresh graph
+    is wanted; only fall back to plain "run mnx-init" guidance when none are known.
     """
     marker = _onboarded_marker()
     if marker.exists():
@@ -290,6 +298,22 @@ def _onboard_outcome() -> HookOutcome:
         marker.write_text("shown", encoding="utf-8")
     except Exception:
         return HookOutcome()  # cannot persist the marker -> stay silent rather than nag every session
+    try:
+        known = mnx_binding.list_graphs()
+    except Exception:
+        known = []
+    if known:
+        names = ", ".join(f"{g['name']} ({g['slug']})" for g in known[:5])
+        more = f", +{len(known) - 5} more" if len(known) > 5 else ""
+        return HookOutcome(context=(
+            "Mnemex is installed but no knowledge graph is configured for THIS project. You "
+            f"(or another project) have used {len(known)} graph(s) before: {names}{more}. Ask the "
+            "user whether one of these is what they want here — if so, bind it for this session "
+            'with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" use-graph <slug> '
+            "--session <this session's id>` (session-only; run /mnemex:mnx-init to bind it "
+            "durably instead). If they want a brand-new graph, run /mnemex:mnx-init. "
+            "Otherwise ignore this — it will not be shown again."
+        ))
     return HookOutcome(context=(
         "Mnemex is installed but no knowledge graph is configured for this project. "
         "If the user wants persistent, self-pruning agent memory, run /mnemex:mnx-init "
@@ -301,19 +325,25 @@ def _onboard_outcome() -> HookOutcome:
 # core per-event logic (host-neutral: event dict in, HookOutcome out)
 # --------------------------------------------------------------------------- #
 
-def core_session_start(event: dict, hook_cmd_base: str = CLAUDE_HOOK_CMD_BASE) -> HookOutcome:
-    """Blocking: sync the bound graph, then ask the agent to get the user's CONSENT for the session.
+def core_session_start(event: dict, hook_cmd_base: str = CLAUDE_HOOK_CMD_BASE,
+                       binding_cmd_base: str = CLAUDE_BINDING_CMD_BASE) -> HookOutcome:
+    """Blocking: sync the bound graph, then ask the agent to CONFIRM the graph and get the user's
+    CONSENT for the session (onboarding plan Phase 5a).
 
-    Instead of nudging on every turn, Mnemex asks once at the top of the session whether to use the
-    graph. If the user agrees, the agent reads before domain work and writes to capture; if not, the
-    agent runs `opt-out` (the command is handed to it with this session's id baked in) and every other
-    Mnemex hook goes silent for the rest of the session. Stays silent if already muted.
-    ``hook_cmd_base`` is how the primer tells the agent to run opt-in/opt-out on THIS host.
+    Instead of nudging on every turn, Mnemex asks once at the top of the session which graph to use
+    (the resolved default, one-keystroke-confirmable, or any other via `use-graph`) and whether to
+    use it at all. If the user agrees, the agent reads before domain work and writes to capture; if
+    not, the agent runs `opt-out` (the command is handed to it with this session's id baked in) and
+    every other Mnemex hook goes silent for the rest of the session. Stays silent if already muted.
+    ``sid`` (this session's id) is threaded into every `resolve()` call so a session override from
+    an earlier turn (Phase 5b `use_graph`) is honored consistently, including on a SessionStart that
+    re-fires on resume. ``hook_cmd_base`` / ``binding_cmd_base`` are how the primer tells the agent
+    to run mnx_hooks.py / mnx_binding.py commands on THIS host.
     """
-    binding = mnx_binding.resolve()
-    if binding is None:
-        return _onboard_outcome()  # no graph configured — nudge to mnx-init (once)
     sid = str(event.get("session_id", ""))
+    binding = mnx_binding.resolve(session_id=sid)
+    if binding is None:
+        return _onboard_outcome()  # no graph configured — pick-or-setup (once)
     if _is_muted(sid):
         return HookOutcome()  # user already muted Mnemex this session (e.g. SessionStart re-fired on resume)
     res = mnx_binding.sync(binding)
@@ -330,15 +360,26 @@ def core_session_start(event: dict, hook_cmd_base: str = CLAUDE_HOOK_CMD_BASE) -
         available = False
 
     lines = [f"Mnemex: {status} ({label})"]
+    notice = mnx_binding.override_mismatch(binding)
+    if notice:
+        lines.append(notice)
     if available:
         team = f" (default team: {binding.default_team})" if binding.default_team else ""
+        list_cmd = f"{binding_cmd_base} list-graphs"
+        use_cmd = f"{binding_cmd_base} use-graph <slug> --session {sid}"
+        clear_cmd = f"{binding_cmd_base} clear-graph-override --session {sid}"
         optin_cmd = f"{hook_cmd_base} opt-in --session {sid}"
         mute_cmd = f"{hook_cmd_base} opt-out --session {sid}"
         lines.append(
-            "A Mnemex knowledge graph is available" + team + ". Get the user's consent ONCE, up front, "
-            "before doing domain work this session — ask plainly whether they want you to use Mnemex "
-            "memory for this session.\n"
-            "  • If YES — record the consent by running this once:\n"
+            f"A Mnemex knowledge graph is available{team}: **{binding.resolution_line()}**. Get "
+            "the user's consent ONCE, up front, before doing domain work this session — tell them "
+            "which graph this is (the source above) and ask plainly whether they want you to use "
+            "it as Mnemex memory this session. If they'd rather use a DIFFERENT graph, list "
+            f"alternatives with `{list_cmd}` and switch for THIS session only with `{use_cmd}` "
+            f"(revert any time with `{clear_cmd}`) before proceeding — this confirm is per-session, "
+            "so only re-ask if the user later asks to switch.\n"
+            "  • If YES (this graph, or one they just switched to, is fine) — record consent by "
+            "running this once:\n"
             f"      {optin_cmd}\n"
             "    From then on a per-prompt reminder keeps the read/capture routing in front of you: "
             "before working on a task in a domain it may cover, load prior knowledge first with the "
@@ -366,7 +407,7 @@ def core_user_prompt_submit(event: dict) -> HookOutcome:
     sid = str(event.get("session_id", ""))
     if _is_muted(sid) or not _is_consented(sid):
         return HookOutcome()  # user declined, or has not agreed yet — the session-start primer owns the ask
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=sid)
     if binding is None:
         return HookOutcome()  # no graph bound here — nothing to route to
     return HookOutcome(context=(
@@ -396,7 +437,7 @@ def core_stop(event: dict) -> HookOutcome:
     _flush_usage_stamps()  # batch-push this turn's usage stamps (silent; advisory)
     if event.get("stop_hook_active"):
         return HookOutcome()  # this stop is already the result of our nudge — let it through
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=sid)
     if binding is None:
         return HookOutcome()  # no graph bound here — nothing to capture
     marker = _stop_marker(sid)
@@ -450,7 +491,7 @@ def core_pre_compact(event: dict) -> HookOutcome:
     sid = str(event.get("session_id", ""))
     if _is_muted(sid):
         return HookOutcome()  # user declined Mnemex this session — no re-arm, no flush
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=sid)
     if binding is None:
         return HookOutcome()  # no graph bound here — nothing to capture
     _flush_usage_stamps()  # safety: batch out any stamps this turn's Stop hasn't flushed yet
@@ -471,14 +512,15 @@ def core_session_end(event: dict) -> HookOutcome:
     """
     sid = str(event.get("session_id", ""))
     muted = _is_muted(sid)
-    for marker in (_stop_marker(sid), _mute_marker(sid), _consent_marker(sid), _compaction_marker(sid)):
-        try:  # tidy per-session markers so the next session re-asks consent / re-nudges
+    for marker in (_stop_marker(sid), _mute_marker(sid), _consent_marker(sid), _compaction_marker(sid),
+                  mnx_binding.session_override_path(sid)):
+        try:  # tidy per-session markers (+ any graph override — Phase 5b: never outlives a session)
             marker.unlink(missing_ok=True)
         except Exception:
             pass
     if muted:
         return HookOutcome()  # user declined Mnemex this session — nothing to flush or nudge
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=sid)
     if binding is None:
         return HookOutcome()
     notices: list[str] = []
@@ -542,7 +584,7 @@ def core_pre_commit_gate(event: dict) -> HookOutcome:
     command = _tool_command(event)
     if not command or not _GIT_COMMIT_RE.search(command):
         return HookOutcome()  # not a git commit
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=str(event.get("session_id", "")))
     if binding is None:
         return HookOutcome()  # no graph bound — nothing to gate
     graph_root = binding.graph_root()
@@ -574,7 +616,7 @@ def core_post_apply_check(event: dict) -> HookOutcome:
     command = _tool_command(event)
     if not command or not _MNEMEX_CMD_RE.search(command):
         return HookOutcome()  # not a mnemex command — don't scan the graph on every Bash call
-    binding = mnx_binding.resolve()
+    binding = mnx_binding.resolve(session_id=str(event.get("session_id", "")))
     if binding is None:
         return HookOutcome()
     root = Path(binding.graph_root())

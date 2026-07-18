@@ -15,10 +15,17 @@ Helper you call: `scripts/mnx_binding.py` (resolve / sync / status / probe-remot
 
 ## 1. Check current state first
 
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" resolve`.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" resolve --session <sid>` — `<sid>` is the
+session id the SessionStart hook gave you earlier this session (baked into the opt-in/opt-out commands
+it showed you); omit `--session` if you never got one (a host with no session-start hook). Passing it
+lets `resolve` see a graph the user already switched to mid-session — every other skill's own preflight
+does the same, so pass `--session <sid>` there too whenever you have it.
 
 - If it resolves (exit 0), tell the user the current binding (`graph_remote` + `source`) and ask whether
-  they want to **keep**, **re-point**, or **add a project-level override**. Do not silently overwrite.
+  they want to **keep**, **re-point** (durable — rewrites the binding file), **switch just for THIS
+  session** (`mnx_binding.py use-graph <slug> --session <sid>`, picking from `list-graphs`'s candidates
+  — reverts automatically at session end or a bounded TTL, or explicitly via `clear-graph-override
+  --session <sid>`), or **add a project-level override**. Do not silently overwrite.
 - If it does not resolve (exit 2), proceed to choose a setup mode.
 
 ## 1b. Fast path — no answer needed (the default when the user just wants to start)

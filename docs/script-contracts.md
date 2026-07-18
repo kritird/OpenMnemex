@@ -54,10 +54,15 @@ Self-contained (does not import the other helpers); stdlib + `PyYAML` only.
 Full spec: [`binding-and-graph-sync.md`](binding-and-graph-sync.md).
 
 ```
-resolve(start_dir=cwd) -> Binding | None
-    # precedence: <project>/.mnemex.md  >  env  >  ~/.claude/mnemex/config.md
-    # within a source, graph_path (local) beats graph_remote (+ warning)
+resolve(start_dir=cwd, session_id=None) -> Binding | None
+    # precedence: session override (Phase 5b, only when session_id given + a live one exists)
+    #   >  <project>/.mnemex.md  >  env  >  ~/.claude/mnemex/config.md
+    # within the project/env/user chain, graph_path (local) beats graph_remote (+ warning)
     # Binding.kind() -> git-remote | git-local | plain-local ; Binding.graph_root() -> dir
+    # Binding.source_kind() -> project | env | user | override
+resolve_project_only(start_dir=cwd) -> Binding | None
+    # resolve() minus the override check — the project/env/user chain alone. Used by
+    # override_mismatch (below) and by set_session_override to find the graph a switch leaves.
 sync(binding) -> {action: cloned|resynced|offline|local|error, graph_root, ...}
     # remote: materialize at remote HEAD in ~/.claude/mnemex/graphs/<slug> (reset --hard; offline=>read-only).
     # local:  verify the folder exists (used in place; no clone/reset).
@@ -81,6 +86,16 @@ list_graphs() -> [{slug, kind, name, location, last_used, present}, ...]
     # the registry UNIONED with a scan of graphs_cache_root() for clones the registry missed. Bounded
     # to that one dir — no filesystem-wide search. `present`: clone exists (remote) / folder exists
     # (local). Works with no binding at all.
+set_session_override(session_id, path=|remote=, ttl_hours=12.0) -> {ok, action: overridden|busy, slug?, expires?, ...}
+    # Phase 5b: point THIS session at a different graph, outranking project/env/user until it
+    # expires or the session ends. Refuses (action=busy) if the CURRENTLY effective graph has an
+    # open promote lock / in-flight plan (mnx_lock.held/in_progress on any team dir) — finish or
+    # abort first. Writes <mnemex home>/session-override/<session_id>.md.
+clear_session_override(session_id) -> {ok, action: cleared}
+    # drop the override file. Missing is a no-op, not an error.
+override_mismatch(binding, start_dir=cwd) -> str | None
+    # None unless `binding` is a session override that disagrees with resolve_project_only() here —
+    # then a one-line "writing into Y, NOT X" marker to echo. The required anti-silent-misroute check.
 ```
 
 **Guided setup (onboarding):** `mnx_init.suggest_default_graph(cwd) -> {path, org, team, rationale}` proposes
@@ -93,17 +108,28 @@ the read-only `init_suggest` tool and `init_graph(use_default=true)`; over the C
 side-store folder (`~/.claude/mnemex/staging/<slug>/`) used by `mnx_stage` (capture atoms) and
 `mnx_stamp` (the stamp spill); `graph_slug`/`staging_root` also appear in `resolve`/`status` JSON.
 
-CLI: `resolve | sync | status | unpushed-state | persist --message "…" | push | graph-root | staging-path | probe-remote --remote <url> | write-user-default --path <dir>|--remote <url> [--force] | list-graphs`.
+CLI: `resolve [--session <id>] | sync [--session <id>] | status [--session <id>] | unpushed-state |
+persist --message "…" | push | graph-root | staging-path | probe-remote --remote <url> |
+write-user-default --path <dir>|--remote <url> [--force] | list-graphs |
+use-graph <slug> [--session <id>] | clear-graph-override [--session <id>]`.
 Each prints one JSON object. `status` folds in
 `unpushed`/`ahead` for a materialized remote clone, so callers see a stranded promote without a second
-call. `probe-remote` runs before any binding exists, so it does not call `resolve()`.
+call. `resolve`/`sync`/`status` also fold in `override_notice` (see `override_mismatch` above) when a
+session override is active and disagrees with the project/user graph. `probe-remote` runs before any
+binding exists, so it does not call `resolve()`; `use-graph`/`clear-graph-override`/`list-graphs` run
+before any binding exists too — a session override must be settable/listable with nothing else bound.
+`--session` defaults to absent (no override considered) everywhere except `use-graph`/
+`clear-graph-override`, which default it to `"default"` — matching `mnx_mcp.session_id()`'s fallback.
 Exit codes: `0` ok (incl. offline-degraded), `2` unresolved (run `/mnemex:mnx-init`), `1` error.
 (This script does not emit the `STATUS=OK|FAIL` line below; its JSON `action`/exit code is the contract.)
 
-**Invariants:** resolution is most-specific-wins and side-effect-free; `sync` leaves a remote clone at the
+**Invariants:** resolution is most-specific-wins; `sync` leaves a remote clone at the
 remote HEAD or untouched (never partial) and never resets a local folder; persistence is determined solely
 by `kind`; a plain-local graph always gets an append-only audit record; user config is read from
 `~/.claude/`, never `${CLAUDE_PLUGIN_ROOT}`; the binding never carries graph-behavior parameters.
+`resolve()` is side-effect-free with ONE narrow exception: an expired session-override file is
+best-effort deleted the moment it is read (a pure tidy of an already-inert file — it changes no
+resolution outcome, since an expired override is ignored either way).
 
 ---
 
@@ -347,18 +373,23 @@ validates/repairs). Imports `mnx_binding`, `mnx_common`, `mnx_stamp`, and best-e
 `mnx_config` / `mnx_doctor`. Every section is guarded, so a partial or broken graph still yields a status.
 
 ```
-status() -> {resolved, binding, clone_present, available, pending_stamps, stamp_durability,
+status(session_id=None) -> {resolved, binding, known_graphs, override_notice?, clone_present, available,
+             pending_stamps, stamp_durability,
              staging:{count, budget_level, urgent, oldest_age_days, atoms:[{provisional_id, score, …}],
                       held:{count, oldest_age_days?, lingering_nag?}},
              teams:[{team, clusters, nodes, hot, warm, cold, cluster_names, last_gc, gc_overdue_days}],
              totals:{teams, clusters, nodes, hot, warm, cold}, health:{ok, errors, warnings}}
-    # resolved=false -> {message: run /mnemex:mnx-init}.  available=false -> bound but not materialized.
+    # resolved=false -> {message: run /mnemex:mnx-init, known_graphs}.  available=false -> bound but not materialized.
     # tier counts come from each cluster index; node counts from node files; last_gc from .mnemex/last_compaction.
     # staging is LOCAL (independent of the clone), so it is reported even when available=false.
+    # known_graphs: mnx_binding.list_graphs(), best-effort — every graph known, not just this one
+    #   (Phase 4). override_notice: mnx_binding.override_mismatch(binding) when a session override
+    #   (Phase 5b, needs session_id) is active and disagrees with the project/user graph.
 ```
 
-CLI: `status`. **Invariants:** strictly read-only — never clones, syncs, commits, or repairs; never
-raises (each section is independently guarded); "not configured" is a valid result, not a failure.
+CLI: `status [--session <id>]`. **Invariants:** strictly read-only — never clones, syncs, commits, or
+repairs; never raises (each section is independently guarded); "not configured" is a valid result, not
+a failure.
 
 ---
 

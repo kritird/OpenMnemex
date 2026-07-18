@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import mnx_binding
 import mnx_common
@@ -151,8 +151,8 @@ def _known_graphs() -> Any:
         return {"error": str(exc)}
 
 
-def status() -> dict[str, Any]:
-    binding = mnx_binding.resolve()
+def status(session_id: Optional[str] = None) -> dict[str, Any]:
+    binding = mnx_binding.resolve(session_id=session_id)
     if binding is None:
         return {"resolved": False,
                 "message": "No Mnemex graph configured for this project. Run /mnemex:mnx-init.",
@@ -160,6 +160,12 @@ def status() -> dict[str, Any]:
 
     out: dict[str, Any] = {"resolved": True, "binding": binding.to_dict(),
                            "known_graphs": _known_graphs()}
+    try:  # session override active + differs from the project/user graph (Phase 5b) — best-effort
+        notice = mnx_binding.override_mismatch(binding)
+        if notice:
+            out["override_notice"] = notice
+    except Exception:
+        pass
     present = _is_present(binding)
     out["clone_present"] = present
 
@@ -194,18 +200,27 @@ def status() -> dict[str, Any]:
 
 
 _USAGE = [
-    'mnx_status.py [status]   — binding + staging + graph health snapshot',
+    'mnx_status.py [status] [--session <id>]   — binding + staging + graph health snapshot',
 ]
+_FLAGS = {"--session": True}
+
+
+def _arg_after(argv: list[str], flag: str) -> Optional[str]:
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return None
 
 
 def _main(argv: list[str]) -> int:
-    handled = mnx_common.cli_guard(argv, _USAGE)
+    handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
     if handled is not None:
         return handled
     cmd = argv[1] if len(argv) > 1 else "status"
     try:
         if cmd == "status":
-            res = status()
+            res = status(session_id=_arg_after(argv, "--session"))
             # "not configured" is a valid status, not a script failure — only "error" fails.
             return mnx_common.emit(res, ok="error" not in res)
         return mnx_common.emit({"error": f"unknown subcommand: {cmd}"}, ok=False)

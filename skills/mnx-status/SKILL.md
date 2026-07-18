@@ -14,7 +14,9 @@ Helper you call: `scripts/mnx_status.py` (status). It aggregates `mnx_binding` (
 
 ## Procedure
 
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_status.py" status` and read the single JSON object.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_status.py" status --session <sid>` (pass the session
+id from session-start if you have one — see mnx-init step 1; honors a mid-session graph switch) and
+read the single JSON object.
 
 ### Not configured
 If `resolved` is false → check `known_graphs` first: if it has entries, tell the user they have no
@@ -52,7 +54,12 @@ Summarize concisely (don't dump raw JSON):
 - **Known graphs** — `known_graphs` lists every OTHER graph Mnemex has registered (name, kind,
   location, `present`), not just this one. Only mention it if the user asks, or if one entry looks
   like it might be what they actually meant to bind here — this list is for discovery, not noise on
-  every status check.
+  every status check. To use a different one for just this session: `mnx_binding.py use-graph <slug>
+  --session <sid>` (revert with `clear-graph-override --session <sid>`) — session-scoped only; point
+  them at `/mnemex:mnx-init` instead if they want the switch to stick.
+- **Override active** — if `override_notice` is present, always relay it verbatim: it means this
+  session is currently reading/writing a DIFFERENT graph than this project/user would normally
+  resolve. Never suppress it, even if the user didn't ask about graphs.
 
 ### Recommend the next step (only when warranted)
 - `health.errors > 0` → recommend `/mnemex:mnx-doctor --fix`.

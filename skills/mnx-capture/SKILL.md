@@ -37,7 +37,8 @@ runs the locate preflight (to find the staging tier) but does **no** extraction,
 This touches **only** the local staging tier — never the graph, never the stamp spill. Then stop.
 
 ## Preflight — locate the graph (always first)
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status`.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status --session <sid>` (the session id
+from session-start, if you have one — see mnx-init step 1; honors a mid-session graph switch).
 - If `resolved` is false → **STOP**: *"No Mnemex graph configured. Run `/mnemex:mnx-init`."*
 - **Echo the resolved graph before staging** so the author sees where atoms will land: show the
   `resolution` line, e.g. *"Capturing into **payments-knowledge** (source: project .mnemex.md)."*

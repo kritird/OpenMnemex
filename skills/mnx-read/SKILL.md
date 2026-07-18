@@ -17,7 +17,8 @@ shared with the MCP `read_*` tools), `scripts/mnx_decay.py` (true current score 
 stale), `scripts/mnx_stamp.py` (durable, auto-flushed usage stamps).
 
 ## Preflight — locate the graph (always first)
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status`.
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status --session <sid>` (the session id
+from session-start, if you have one — see mnx-init step 1; honors a mid-session graph switch).
 - If `resolved` is false → **STOP**: tell the user *"No Mnemex graph configured. Run `/mnemex:mnx-init`."*
 - **Echo the resolved graph** so the user knows which graph the answer is drawn from: show the
   `resolution` line, e.g. *"Reading from **payments-knowledge** (source: project .mnemex.md)."* If

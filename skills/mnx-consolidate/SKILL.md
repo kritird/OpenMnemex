@@ -19,9 +19,10 @@ Helpers: `mnx_binding` (locate), `mnx_lock`, `mnx_config`, `mnx_compact`, `mnx_d
 `mnx_node` (the deterministic node writer — tombstone / revalidate), `mnx_index`, `mnx_doctor`, `mnx_common`.
 
 ## Pre-flight (when promote has not already established it)
-0. **Locate the graph:** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status`. If `resolved`
-   is false → **STOP**, point at `/mnemex:mnx-init`. If `clone_present` is false, `mnx_binding.py sync`
-   once. Operate on `graph_root`, never the working directory; note `kind`.
+0. **Locate the graph:** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status --session <sid>`
+   (the session id from session-start, if you have one — see mnx-init step 1; honors a mid-session graph
+   switch). If `resolved` is false → **STOP**, point at `/mnemex:mnx-init`. If `clone_present` is false,
+   `mnx_binding.py sync` once. Operate on `graph_root`, never the working directory; note `kind`.
 1. **Team lock** (`mnx_lock.acquire`) — one mutating op per team. When promote already holds it, reuse it.
 2. **Crash recovery:** a `pass.plan.json` with a dirty tree → offer `git checkout .` to restore the
    last good commit before continuing.

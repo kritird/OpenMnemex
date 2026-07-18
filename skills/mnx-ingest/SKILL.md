@@ -34,7 +34,9 @@ resolution), `mnx_simindex` (the ER blocker), `mnx_stage` (bulk staging), `mnx_b
 ---
 
 ## Preflight — resolve the target graph
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status` (or honor an explicit `--into <graph>`).
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status --session <sid>` (the session id
+from session-start, if you have one — see mnx-init step 1; honors a mid-session graph switch), or
+honor an explicit `--into <graph>`.
 - If unresolved and no `--into` → **STOP**: *"No target graph. Pass `--into <graph>` or run `/mnemex:mnx-init`."*
 - **Echo the resolved target graph** before anything stages, exactly like capture/promote — the user must
   see where the import will land. If `default_fallback` is true, flag it prominently and confirm.

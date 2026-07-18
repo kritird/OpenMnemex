@@ -14,8 +14,10 @@ Full invariant list with severities: `docs/invariants-and-failure-modes.md` (Par
 `mnx_config`.
 
 ## Preflight — locate the graph (always first)
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status`. If `resolved` is false → **STOP**
-and point at `/mnemex:mnx-init`; if `clone_present` is false, run `mnx_binding.py sync` once. Check/fix
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" status --session <sid>` (the session id
+from session-start, if you have one — see mnx-init step 1; honors a mid-session graph switch). If
+`resolved` is false → **STOP** and point at `/mnemex:mnx-init`; if `clone_present` is false, run
+`mnx_binding.py sync` once. Check/fix
 operate on the returned **`graph_root`**, never the working directory. (When `mnx-doctor` runs *inside*
 mnx-promote, it has already resolved it.) Add `--staging` to also run the staged-integrity check
 (`mnx_doctor.py check-staging`) over the local capture tier.
