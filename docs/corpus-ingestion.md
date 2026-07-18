@@ -179,20 +179,45 @@ correct for episodic capture, fatal for a corpus. Ingest stages under a **labele
 mid-import. The bulk batch is isolated from any hand-captured atoms in the same graph's staging (label
 partition), so an in-flight import never entangles a user's ordinary captures.
 
-**`mnx-promote --bulk`** adapts the existing promote for volume — same transaction, same single-writer,
-same `mnx_node` truth-writes, but:
+**`mnx-promote --bulk --ingest-batch <id>`** IS the existing promote — literally the same
+`mnx_promote.py begin/context/apply` engine transaction (onboarding + ingest plan, the O1 lift), just
+given the labeled ingest batch instead of the unlabeled session batch, so it drains only that batch's
+atoms and never touches a concurrently-staged hand-capture. There is no separate bulk code path to drift
+from episodic promote:
 
-1. **Fork reconcile per cluster** (the sub-agent contract already permits forking — *plan in parallel,
-   apply serially under the lock*). Each fork reconciles its subtree's atoms against one cluster's index.
+1. **Fork reconcile per cluster** (a plan-drafting technique, unchanged: the sub-agent contract already
+   permits forking — *plan in parallel, apply serially under the lock*). Each fork reconciles its
+   subtree's atoms against one cluster's index.
 2. **Summarized plan.** The approval plan collapses to per-cluster counts (`CREATE 214 · MERGE 31 · DROP-DUP
    57`) and lists *only* the exceptions in full: contradictions, ambiguous near-matches, and new-cluster
-   creation. Auto-accept the plain CREATEs.
-3. **Incremental consolidate + checkpoint.** Consolidation (decay/re-tier/death/budget) runs per drained
-   batch over a *frozen* view, not once at the end over a moving target — otherwise death/re-tier math
-   thrashes as the graph grows mid-import. Snapshot-then-apply, batch by batch.
+   creation. Auto-accept the plain CREATEs. Same plan JSON shape as episodic.
+3. **One `apply()` call settles the whole batch.** Node writes → mesh links → consolidate → regen →
+   doctor gate → persist → per-atom settle, in the fixed order episodic promote uses. Consolidation runs
+   over the batch as landed by this one call — **not yet** chunked into incremental per-sub-batch
+   checkpoints over a frozen view for an exceptionally large single-run corpus (that finer-grained
+   checkpointing, needed only when a batch is too large for one consolidate pass to reason about
+   sensibly, is sequenced as later work — see `docs/onboarding-and-ingest-plan.md` §3.4 "3.4b").
 
 Everything else — link reconciliation (Step 2b), the doctor gate (E==0), kind-aware persist — is the
-existing promote, unchanged.
+existing promote, unchanged. Exposed identically on **every** surface: the Claude `--bulk` skill mode and
+the MCP `promote_begin`/`promote_context`/`promote_apply` tools (`ingest_batch=` parameter) call the exact
+same engine functions.
+
+### Ingest on non-Claude hosts (MCP)
+
+Every step above is a real MCP tool, not Claude-only: `ingest_acquire` (materialize the source read-only)
+→ `ingest_probe` (walk/classify/chunk; gate #1) → distill + stage atoms with
+`capture_add(ingest_batch=<id>, provenance={...})` → `glean_coverage` (loop until complete/cap) →
+`er_resolve` (CREATE/MERGE/COLLAPSE + the `possible` HITL band, over `{staged ∪ existing graph pages}` —
+this is how a re-import merges instead of duplicating) → drain with `promote_begin`/`promote_context`/
+`promote_apply(ingest_batch=<id>)` → `ingest_manifest_write` on confirmed persist (`ingest_delta` diffs the
+next re-import). The judgment (is this a durable atom? which `[[link]]`? which merge?) still lives with the
+host model — today via each ingest tool's description (they embed the compact ingest digest, e.g.
+`ingest_acquire`'s), not yet a dedicated `ingest-procedure` MCP prompt the way read/capture/promote/curate
+have one. **Deferred, not forgotten:** migrating `skills/mnx-ingest/SKILL.md` into the single-sourced
+`templates/procedures/` core+fragments system (byte-for-byte drift-guarded, matching read/capture/promote)
+so an `ingest-procedure` prompt renders from the same source — tracked as onboarding-and-ingest-plan.md
+§3.1, sequenced after the load-bearing engine lift (§3.4) shipped in this same change.
 
 ---
 

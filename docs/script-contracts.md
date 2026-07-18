@@ -371,6 +371,50 @@ that `recover` can roll back via `git checkout` to the last good commit.
 
 ---
 
+## 🔁 `mnx_promote.py` — the plan-transaction orchestrator
+
+The host submits ONE declarative plan (dispositions + splits + links + consolidate); this module executes
+the whole transaction serially under the team lock, in fixed order (truth before derived) — see
+docs/staging-and-promotion.md. `begin`/`context`/`apply` all take an optional `ingest_batch`: omitted (or
+`None`) selects the unlabeled **session** batch (`_session`); given, selects that labeled **bulk** batch
+instead (onboarding + ingest plan, the O1 lift) — same transaction, same lock, same doctor gate, just a
+different staged batch. `begin`/`context`/`apply` must all pass the SAME `ingest_batch` for one promote run.
+
+```
+begin(binding=None, team=None, ingest_batch=None) -> {guard: none|busy|unpushed|ingest-batch|empty-batch, ...}
+    # preflight (flush stamps, D7 unpushed guard -> retry_push, stranded-plan recovery) then acquire the
+    # team lock. guard='none' -> {lock, batch, batch_count, phonebook}. guard='ingest-batch' (plain begin(),
+    # only bulk atoms staged) names begin(ingest_batch=<id>) as the fix. guard='empty-batch' (a named
+    # ingest_batch with nothing staged under it).
+context(binding=None, team=None, pids=None, clusters=None, ingest_batch=None)
+    -> {team, batch, near_matches, cluster_index, mesh_preview}
+    # everything the reconcile judgment needs: the staged batch (optionally filtered by pids/clusters),
+    # mnx_simindex near-match candidates per atom, routed cluster index rows, a mnx_mesh link-plan preview.
+validate_plan(plan, batch_pids, graph_root) -> list[str]   # [] = valid; schema + FULL-COVERAGE (every
+    # batch_pid disposed exactly once, no disposition references a pid outside the batch)
+apply(plan, approved=True, binding=None, team=None, ingest_batch=None)
+    -> {action: applied|rejected|committed-not-pushed, ...}
+    # 1 validate 2 write pass.plan.json 3 mnx_node truth writes 4 mnx_mesh.apply_links 5 consolidate
+    # (approved-death tombstones) 6 regen indexes/cross-links/phonebook + the TEAM ROUTER index (its
+    # Children listing — matters whenever a disposition creates a brand-new cluster, e.g. an all-CREATE
+    # empty-graph bulk seed) 7 doctor gate (E==0, else git-rollback + reject) 8 mnx_binding.persist (push
+    # failure -> action=committed-not-pushed, plan stays for retry_push) 9 per-atom settle (hold
+    # contradictions, clear-merged the rest), remove plan, release lock.
+retry_push(binding=None, team=None) -> {action: pushed-and-settled|still-failing, ...}
+    # push an already-committed merge, then the deferred settle from the persisted plan.
+abort(binding=None, team=None) -> {action: aborted, had_plan}   # release lock, drop plan, staging untouched
+```
+CLI: `begin [--team t] [--ingest-batch id] | context [--team t] [--ingest-batch id] [--pids p1,p2]
+[--clusters c1,c2] | apply [--team t] [--ingest-batch id] --json <plan.json | --json-file f> | retry-push
+[--team t] | abort [--team t]`.
+**Invariants:** a team lock handle is rederived from `graph_root+team` (not threaded across calls) so a
+CLI retry_push/abort in a fresh process after a crash still finds it; `apply` never partially commits (the
+doctor gate rolls back an uncommitted write; a push failure leaves the commit + plan intact for
+`retry_push`, never re-runs the merge); staging is only settled on a CONFIRMED persist; `ingest_batch`
+partitions bulk from session atoms end-to-end (DP8) — draining one never touches the other.
+
+---
+
 ## 🎚️ `mnx_config.py` — config load, derivation, version stamping
 
 ```

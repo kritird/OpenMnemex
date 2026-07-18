@@ -46,6 +46,7 @@ import mnx_lock
 import mnx_mesh
 import mnx_node
 import mnx_phonebook
+import mnx_regen
 import mnx_resolve
 import mnx_simindex
 import mnx_stage
@@ -269,10 +270,17 @@ def _promoted_and_held_from_plan(plan: dict[str, Any]) -> tuple[list[str], list[
 
 # --- begin ----------------------------------------------------------------------------
 
-def begin(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str] = None) -> dict[str, Any]:
-    """Preflight: flush stamps, D7 unpushed guard, stranded-plan recovery, then acquire the lock."""
+def begin(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str] = None,
+          ingest_batch: Optional[str] = None) -> dict[str, Any]:
+    """Preflight: flush stamps, D7 unpushed guard, stranded-plan recovery, then acquire the lock.
+
+    ``ingest_batch`` selects a **bulk** batch (a labeled corpus import) instead of the default
+    ``_session`` hand-capture batch — the O1 lift that makes bulk promote a real engine transaction
+    on BOTH surfaces, not skill-only prose. The whole apply() sequence is reused unchanged; only the
+    batch label differs, so there is one tested writer path for session and bulk alike."""
     binding, team_name, team_path = _resolve(binding, team)
     graph_root = binding.graph_root()
+    label = ingest_batch or "_session"
     stamps_flushed = mnx_stamp.flush()
 
     unpushed = mnx_binding.unpushed_state(binding)
@@ -297,13 +305,25 @@ def begin(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str] =
         recovered = {"action": "replay", "settle": settle_result}
         _release_lock_if_held(graph_root, team_name, team_path)
 
-    session_batch = mnx_stage.list_atoms(binding=binding, label="_session")["atoms"]
+    batch = mnx_stage.list_atoms(binding=binding, label=label)["atoms"]
     staging_status = mnx_stage.status(binding=binding)
-    if not session_batch and any(k != "_session" for k in staging_status.get("by_label", {})):
-        return {"guard": "ingest-batch", "action": "no session atoms staged; drain the pending "
-                "ingest batch via the mnx-promote --bulk skill path instead",
-                "team": team_name, "by_label": staging_status.get("by_label"),
-                "recovered": recovered, "stamps_flushed": stamps_flushed}
+    if not batch:
+        if ingest_batch:  # a named bulk batch that has nothing staged — nothing to drain
+            return {"guard": "empty-batch", "team": team_name, "ingest_batch": ingest_batch,
+                    "action": (f"no atoms staged for ingest batch {ingest_batch!r}; stage some "
+                               "(capture_add with ingest_batch) or check the batch id"),
+                    "by_label": staging_status.get("by_label"),
+                    "recovered": recovered, "stamps_flushed": stamps_flushed}
+        # Session promote, but only bulk atoms are staged. F5 fix: name the REAL bulk path on this
+        # surface (an engine transaction now), not the old "mnx-promote --bulk skill path" pointer.
+        others = [k for k in staging_status.get("by_label", {}) if k != "_session"]
+        if others:
+            return {"guard": "ingest-batch", "team": team_name, "ingest_batches": others,
+                    "action": ("no session atoms staged; drain a pending ingest batch by promoting "
+                               "with its label — promote_begin(ingest_batch=<id>) over MCP, or "
+                               "/mnemex:mnx-promote --bulk --ingest-batch <id> on Claude"),
+                    "by_label": staging_status.get("by_label"),
+                    "recovered": recovered, "stamps_flushed": stamps_flushed}
 
     try:
         handle = mnx_lock.acquire(team_path)
@@ -313,20 +333,22 @@ def begin(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str] =
 
     return {"guard": "none", "action": "locked", "team": team_name, "lock": handle,
             "recovered": recovered, "stamps_flushed": stamps_flushed,
-            "batch": session_batch, "batch_count": len(session_batch),
+            "batch": batch, "batch_count": len(batch), "ingest_batch": ingest_batch,
             "phonebook": mnx_phonebook.entries(team_path)}
 
 
 # --- context --------------------------------------------------------------------------
 
 def context(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str] = None,
-            pids: Optional[list[str]] = None, clusters: Optional[list[str]] = None) -> dict[str, Any]:
+            pids: Optional[list[str]] = None, clusters: Optional[list[str]] = None,
+            ingest_batch: Optional[str] = None) -> dict[str, Any]:
     """Everything the reconcile judgment needs: staged atoms + near-match candidates + routed
-    cluster index rows + a link-plan preview, in one call."""
+    cluster index rows + a link-plan preview, in one call. ``ingest_batch`` selects a bulk batch
+    (matching begin/apply) instead of the default ``_session`` hand-capture batch."""
     binding, team_name, team_path = _resolve(binding, team)
     graph_root = binding.graph_root()
 
-    batch = mnx_stage.overlay(binding=binding, label="_session")["atoms"]
+    batch = mnx_stage.overlay(binding=binding, label=ingest_batch or "_session")["atoms"]
     if pids:
         want = set(pids)
         batch = [a for a in batch if a.get("provisional_id") in want]
@@ -376,8 +398,12 @@ def context(binding: Optional["mnx_binding.Binding"] = None, team: Optional[str]
 
 def apply(plan: dict[str, Any], approved: bool = True,
           binding: Optional["mnx_binding.Binding"] = None,
-          team: Optional[str] = None) -> dict[str, Any]:
-    """Execute the promote SKILL's Step 5, in fixed order, under the team lock. See module docstring."""
+          team: Optional[str] = None, ingest_batch: Optional[str] = None) -> dict[str, Any]:
+    """Execute the promote SKILL's Step 5, in fixed order, under the team lock. See module docstring.
+
+    ``ingest_batch`` must match the label passed to begin(): the plan's coverage is validated against
+    that batch's staged pids, and the same pids are settled (cleared/held) afterward — so bulk and
+    session promotes run the identical transaction, differing only in which staged batch they drain."""
     binding, team_name, team_path = _resolve(binding, team)
     graph_root = binding.graph_root()
 
@@ -387,7 +413,8 @@ def apply(plan: dict[str, Any], approved: bool = True,
         raise ValueError(f"team lock not held for {team_name!r} — call begin() first")
 
     batch_pids = {a["provisional_id"]
-                 for a in mnx_stage.list_atoms(binding=binding, label="_session")["atoms"]}
+                 for a in mnx_stage.list_atoms(binding=binding,
+                                               label=ingest_batch or "_session")["atoms"]}
     errors = validate_plan(plan, batch_pids, graph_root)
     if errors:
         return {"action": "rejected", "reason": "validation", "errors": errors}
@@ -522,6 +549,14 @@ def apply(plan: dict[str, Any], approved: bool = True,
         mnx_doctor.regen_crosslinks(graph_root)
     for t in sorted(touched_teams):
         mnx_phonebook.regenerate(str(Path(graph_root) / t))
+        # Regenerate the team ROUTER index (its `## Children` cluster listing) too — the same
+        # derived file the merge driver rebuilds via _regen_team_index. apply() historically
+        # regenerated cluster indexes/cross-links/phonebook/org but NOT this one, so a disposition
+        # that creates a BRAND-NEW cluster left the team router stale and the new cluster invisible
+        # to mnx_read.frontier (which routes via the router's children). Rarely hit by session
+        # promotes (they usually target existing clusters); ALWAYS hit by a bulk empty-graph seed,
+        # where every cluster is new — so the Phase 2 "read returns content" bar depends on it.
+        mnx_regen.regen_content(str(Path(graph_root) / t / mnx_common.INDEX_FILENAME))
     if touched_teams:
         mnx_phonebook.regenerate_org(graph_root)
         cfg = mnx_config.load(graph_root)
@@ -613,13 +648,14 @@ def _json_stdin(argv: list[str]) -> dict[str, Any]:
 
 
 _USAGE = [
-    "mnx_promote.py begin [--team <t>]                              — preflight guards + lock",
-    "mnx_promote.py context [--team <t>] [--pids p1,p2] [--clusters c1,c2]  — reconcile context",
-    "mnx_promote.py apply [--team <t>] [--json < plan.json | --json-file <f>]  — apply an approved plan",
+    "mnx_promote.py begin [--team <t>] [--ingest-batch <id>]        — preflight guards + lock (bulk if --ingest-batch)",
+    "mnx_promote.py context [--team <t>] [--ingest-batch <id>] [--pids p1,p2] [--clusters c1,c2]  — reconcile context",
+    "mnx_promote.py apply [--team <t>] [--ingest-batch <id>] [--json < plan.json | --json-file <f>]  — apply an approved plan",
     "mnx_promote.py retry-push [--team <t>]                          — retry a failed push + settle",
     "mnx_promote.py abort [--team <t>]                               — release lock, drop the plan",
 ]
-_FLAGS = {"--team": True, "--pids": True, "--clusters": True, "--json": False, "--json-file": True}
+_FLAGS = {"--team": True, "--pids": True, "--clusters": True, "--json": False, "--json-file": True,
+          "--ingest-batch": True}
 
 
 def _main(argv: list[str]) -> int:
@@ -628,16 +664,18 @@ def _main(argv: list[str]) -> int:
         return handled
     cmd = argv[1] if len(argv) > 1 else ""
     team = _arg(argv, "--team")
+    ingest_batch = _arg(argv, "--ingest-batch")
     try:
         if cmd == "begin":
-            return mnx_common.emit(begin(team=team))
+            return mnx_common.emit(begin(team=team, ingest_batch=ingest_batch))
         if cmd == "context":
             pids = (_arg(argv, "--pids") or "").split(",") if _arg(argv, "--pids") else None
             clusters = (_arg(argv, "--clusters") or "").split(",") if _arg(argv, "--clusters") else None
-            return mnx_common.emit(context(team=team, pids=pids, clusters=clusters))
+            return mnx_common.emit(context(team=team, pids=pids, clusters=clusters,
+                                           ingest_batch=ingest_batch))
         if cmd == "apply":
             plan = _json_stdin(argv)
-            res = apply(plan, team=team)
+            res = apply(plan, team=team, ingest_batch=ingest_batch)
             return mnx_common.emit(res, ok=res.get("action") not in ("rejected",))
         if cmd == "retry-push":
             return mnx_common.emit(retry_push(team=team))

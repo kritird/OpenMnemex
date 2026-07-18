@@ -134,10 +134,14 @@ any contradiction is a **hard HITL block** (resolve in-cycle or abort). The orde
 5. **Apply** serially under the lock; run `mnx-doctor` (must pass); **persist** (commit + push by kind);
    **clear staging** only on a confirmed persist (abort leaves staging untouched).
 
-**`--bulk [--ingest-batch <id>]`** is the volume-adapted variant that [`mnx-ingest`](#3️⃣🅱️-mnx-ingest--bootstrap-the-graph-from-an-existing-repo) hands off to: forked per-cluster reconcile, a per-cluster-count plan that
-auto-accepts plain CREATE/MERGE and stops only on exceptions (gate #2), incremental consolidate over a
-frozen view, and an ingest-manifest write on persist. It drains only the labeled batch, never a user's
-hand-captures. See [`staging-and-promotion.md`](staging-and-promotion.md) and [`corpus-ingestion.md`](corpus-ingestion.md).
+**`--bulk --ingest-batch <id>`** is the volume-adapted variant that [`mnx-ingest`](#3️⃣🅱️-mnx-ingest--bootstrap-the-graph-from-an-existing-repo) hands off to — **the same engine transaction as episodic promote**
+(`mnx_promote.py begin/context/apply`, just given the labeled batch instead of the unlabeled session
+batch; onboarding + ingest plan, the O1 lift), not a separate bulk code path: forked per-cluster reconcile
+(a plan-drafting technique), a per-cluster-count plan that auto-accepts plain CREATE/MERGE and stops only
+on exceptions (gate #2), and an ingest-manifest write on confirmed persist. It drains only the labeled
+batch, never a user's hand-captures. Exposed identically over MCP (`promote_begin`/`promote_context`/
+`promote_apply` with `ingest_batch=`) — a foreign host runs the identical transaction, not a Claude-only
+path. See [`staging-and-promotion.md`](staging-and-promotion.md) and [`corpus-ingestion.md`](corpus-ingestion.md).
 
 ---
 
@@ -164,7 +168,12 @@ source-tree→cluster map up front; gate #2 is the bulk-promote summary. No per-
 
 Ingest **never writes the graph** (staging only; promote is the sole writer), **never mutates the source**,
 **never reads secrets**, and is **idempotent** on re-run (a deleted source file is an *orphan candidate*,
-never auto-death). Full model: [`corpus-ingestion.md`](corpus-ingestion.md).
+never auto-death). The deterministic front-end (acquire/probe/delta/manifest-write, `mnx_glean.coverage`,
+`mnx_er.resolve`) is exposed as real MCP tools too, not Claude-only — see
+[`corpus-ingestion.md`](corpus-ingestion.md) "Ingest on non-Claude hosts". `skills/mnx-ingest/SKILL.md`
+itself is still hand-authored prose (not yet migrated into the single-sourced `templates/procedures/`
+system the way read/capture/promote are — deferred, onboarding-and-ingest-plan.md §3.1). Full model:
+[`corpus-ingestion.md`](corpus-ingestion.md).
 
 ---
 

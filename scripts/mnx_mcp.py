@@ -618,36 +618,41 @@ def _map_promote_value_error(ve: ValueError, fallback_code: str, fallback_action
 
 
 @tool_guard()
-def _promote_begin(binding: Any = None, sync: Any = None) -> dict[str, Any]:
+def _promote_begin(ingest_batch: Optional[str] = None,
+                   binding: Any = None, sync: Any = None) -> dict[str, Any]:
     """Preflight (flush stamps, D7 unpushed guard, stranded-plan recovery) then acquire the
-    team lock. Returns the staged session batch + team phonebook, or a guard block (busy/
-    unpushed/ingest-batch) naming the next step."""
+    team lock. Returns the staged batch + team phonebook, or a guard block (busy/unpushed/
+    ingest-batch) naming the next step. Pass ingest_batch=<id> to drain a BULK corpus batch
+    (same transaction, just a different staged batch) instead of the session hand-captures."""
     try:
-        return mnx_promote.begin(binding=binding)
+        return mnx_promote.begin(binding=binding, ingest_batch=ingest_batch)
     except ValueError as ve:
         raise _map_promote_value_error(ve, "no-team", _NO_TEAM_ACTION) from ve
 
 
 @tool_guard()
 def _promote_context(pids: Optional[list[str]] = None, clusters: Optional[list[str]] = None,
+                     ingest_batch: Optional[str] = None,
                      binding: Any = None, sync: Any = None) -> dict[str, Any]:
     """Everything the reconcile judgment needs in one call: the staged batch (optionally
     filtered), mnx_simindex near-match candidates per atom, routed cluster index rows, and
-    a mnx_mesh link-plan preview."""
+    a mnx_mesh link-plan preview. ingest_batch selects the same bulk batch as promote_begin."""
     try:
-        return mnx_promote.context(binding=binding, pids=pids, clusters=clusters)
+        return mnx_promote.context(binding=binding, pids=pids, clusters=clusters,
+                                   ingest_batch=ingest_batch)
     except ValueError as ve:
         raise _map_promote_value_error(ve, "no-team", _NO_TEAM_ACTION) from ve
 
 
 @tool_guard()
-def _promote_apply(plan: dict[str, Any], approved: bool = False,
+def _promote_apply(plan: dict[str, Any], approved: bool = False, ingest_batch: Optional[str] = None,
                    binding: Any = None, sync: Any = None) -> dict[str, Any]:
     """Execute the promote SKILL's Step 5 (writes -> mesh -> consolidate -> regen -> doctor
     gate -> persist -> settle) under the lock acquired by promote_begin. MUTATING: refuses
     without approved=true — the human approval named in the procedure's Step 4. A rejected
     plan (validation or doctor-gate) or a committed-but-unpushed merge comes back as a
-    structured, non-error payload, not a ToolError."""
+    structured, non-error payload, not a ToolError. ingest_batch must match promote_begin's
+    (the plan is validated against, and settles, that bulk batch's staged pids)."""
     if not approved:
         raise ToolError("approval-required",
                         "promote_apply executes a plan transaction; it needs explicit human "
@@ -655,7 +660,7 @@ def _promote_apply(plan: dict[str, Any], approved: bool = False,
                         "present the plan to the user, then call promote_apply again with "
                         "approved=true")
     try:
-        return mnx_promote.apply(plan, approved=True, binding=binding)
+        return mnx_promote.apply(plan, approved=True, binding=binding, ingest_batch=ingest_batch)
     except ValueError as ve:
         raise _map_promote_value_error(ve, "no-lock", "call promote_begin first") from ve
 
@@ -928,20 +933,23 @@ def register_tools(server: "FastMCP") -> None:
                              "stamps, then acquire the team lock. Returns the staged session "
                              "batch (with provenance) and the team phonebook, or a guard block "
                              "(busy/unpushed/ingest-batch) naming the next step. Call "
-                             "promote_context next.\n\n"
+                             "promote_context next. Pass ingest_batch=<id> to drain a bulk corpus "
+                             "batch (from capture_add ingest_batch / ingest) — the SAME transaction, "
+                             "just a different staged batch.\n\n"
                              + mnx_procedures.render_digest("promote"))
-    def promote_begin() -> dict[str, Any]:
-        return _promote_begin()
+    def promote_begin(ingest_batch: Optional[str] = None) -> dict[str, Any]:
+        return _promote_begin(ingest_batch)
 
     @server.tool(name="promote_context",
                  description="Everything the reconcile judgment needs in one call: the staged "
                              "batch (optionally filtered by pids/clusters), near-match "
                              "candidates per atom, routed cluster index rows, and a mesh "
                              "link-plan preview. Call after promote_begin, before drafting the "
-                             "plan.")
+                             "plan. ingest_batch selects the same bulk batch as promote_begin.")
     def promote_context(pids: Optional[list[str]] = None,
-                        clusters: Optional[list[str]] = None) -> dict[str, Any]:
-        return _promote_context(pids, clusters)
+                        clusters: Optional[list[str]] = None,
+                        ingest_batch: Optional[str] = None) -> dict[str, Any]:
+        return _promote_context(pids, clusters, ingest_batch)
 
     @server.tool(name="promote_apply",
                  description="Execute an approved plan transaction: node writes -> mesh links "
@@ -968,9 +976,11 @@ def register_tools(server: "FastMCP") -> None:
                              "translated to its real id automatically, since a create's real id "
                              "isn't known until this call mints it. A pre-existing node's edges "
                              "into a just-superseded id are repointed to the successor "
-                             "automatically — no plan field needed.")
-    def promote_apply(plan: dict[str, Any], approved: bool = False) -> dict[str, Any]:
-        return _promote_apply(plan, approved)
+                             "automatically — no plan field needed. ingest_batch must match "
+                             "promote_begin's for a bulk drain (validates + settles that batch).")
+    def promote_apply(plan: dict[str, Any], approved: bool = False,
+                      ingest_batch: Optional[str] = None) -> dict[str, Any]:
+        return _promote_apply(plan, approved, ingest_batch)
 
     @server.tool(name="promote_retry_push",
                  description="Push an already-committed promote merge (after a prior "

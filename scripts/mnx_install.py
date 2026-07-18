@@ -206,6 +206,7 @@ def instruction_block_body() -> str:
     read = mnx_procedures.render_digest("read").strip()
     capture = mnx_procedures.render_digest("capture").strip()
     promote = mnx_procedures.render_digest("promote").strip()
+    ingest = mnx_procedures.render_digest("ingest").strip()
     return (
         "## Memory (OpenMnemex)\n\n"
         "Tool names are prefixed by this host (e.g. `mnemex.read_frontier`). If your host "
@@ -215,7 +216,8 @@ def instruction_block_body() -> str:
         "consent primer, no auto-capture nudge on most hosts).\n\n"
         f"**Read.** {read}\n\n"
         f"**Capture.** {capture}\n\n"
-        f"**Promote.** {promote}\n"
+        f"**Promote.** {promote}\n\n"
+        f"**Ingest (bootstrap from a repo).** {ingest}\n"
     )
 
 
