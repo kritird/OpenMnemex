@@ -35,6 +35,25 @@ Resolution never creates directories; the location materializes on first write. 
 deliberately separate override is `$MNEMEX_INGEST_CACHE`, which relocates only the ingest clone
 cache (it can get large and is safe to delete).
 
+### The local-folder default (guided setup)
+
+A first-time user with no graph should never hit a dead end, so guided setup proposes a **plain local
+folder** — no git remote, no credentials, so it always succeeds:
+
+- `mnx_init.suggest_default_graph(cwd)` proposes `<mnemex home>/graphs/<project-name>` (pure
+  computation, writes nothing) — a folder named after the current project, so different projects get
+  distinct default graphs.
+- `mnx_binding.write_user_default(path=…)` writes that choice to `<mnemex home>/config.md` (the user
+  default, resolution rung 3), storing an **absolute** path so it resolves identically from any cwd.
+  It refuses to clobber an existing user default without `force=True`.
+- The installer's `--init-graph` flag and the MCP `init_graph(use_default=true)` tool chain these two
+  with `mnx_init.init_graph` to go from nothing to a bound, doctor-clean graph in one step. The
+  read-only `init_suggest` tool returns the proposal without writing, for a preview.
+
+A git remote stays fully supported (`graph_remote`) — it is the right choice for sharing a graph across
+machines or a team — but it is no longer the default, because auth/network can fail and onboarding must
+not.
+
 ---
 
 ## ⚙️ Schema and defaults

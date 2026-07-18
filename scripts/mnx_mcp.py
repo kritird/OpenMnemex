@@ -314,11 +314,36 @@ def _doctor_fix(confirm: bool = False, binding: Any = None, sync: Any = None) ->
 
 
 @tool_guard(sync_first=False)
+def _init_suggest() -> dict[str, Any]:
+    """Propose a local-folder default graph for a host with none configured. Read-only — pure
+    computation, writes nothing (the read-only companion to init_graph's use_default)."""
+    return mnx_init.suggest_default_graph(os.getcwd())
+
+
+@tool_guard(sync_first=False)
 def _init_graph(remote: Optional[str] = None, path: Optional[str] = None,
-                team: str = mnx_init.DEFAULT_TEAM, org: Optional[str] = None) -> dict[str, Any]:
+                team: str = mnx_init.DEFAULT_TEAM, org: Optional[str] = None,
+                use_default: bool = False) -> dict[str, Any]:
     """Scaffold a brand-new graph (the one tool that ESTABLISHES a root, so it does not
     sync-first an existing binding). Probes a remote read-only before touching it, installs
-    the merge driver, stamps config, and doctor-checks — a fresh graph is clean on day one."""
+    the merge driver, stamps config, and doctor-checks — a fresh graph is clean on day one.
+
+    ``use_default=True`` is the zero-argument onboarding path: take the ``init_suggest`` proposal
+    (a local folder under the mnemex home, named after this project), scaffold it, AND write it as
+    the user default so the very next tool call resolves it — no path/remote needed."""
+    if use_default:
+        proposal = mnx_init.suggest_default_graph(os.getcwd())
+        try:
+            result = mnx_init.init_graph(path=proposal["path"], team=proposal["team"],
+                                         org=proposal["org"])
+        except mnx_init._InitError as ie:
+            raise ToolError(ie.code, str(ie), ie.action) from ie
+        result["suggested"] = proposal
+        # Bind it so the next call resolves without a project .mnemex.md. Never clobber an existing
+        # user default (write_user_default refuses without force) — reported, not fatal.
+        result["user_default"] = mnx_binding.write_user_default(
+            path=proposal["path"], default_team=proposal["team"])
+        return result
     try:
         return mnx_init.init_graph(remote=remote, path=path, team=team, org=org)
     except mnx_init._InitError as ie:
@@ -615,13 +640,25 @@ def register_tools(server: "FastMCP") -> None:
     def doctor_fix(confirm: bool = False) -> dict[str, Any]:
         return _doctor_fix(confirm=confirm)
 
+    @server.tool(name="init_suggest",
+                 description="Propose a local-folder default graph for a host with none configured "
+                             "(a folder under the mnemex home, named after this project). Read-only "
+                             "— writes nothing. Use it to preview what init_graph(use_default=true) "
+                             "would create before committing.")
+    def init_suggest() -> dict[str, Any]:
+        return _init_suggest()
+
     @server.tool(name="init_graph",
                  description="Scaffold a brand-new Mnemex graph and leave it doctor-clean. Give "
                              "exactly one of path=<folder> or remote=<git-url>; a non-empty remote "
-                             "is refused (bind to it instead). Optional team=/org= names.")
+                             "is refused (bind to it instead). Optional team=/org= names. Or pass "
+                             "use_default=true for the zero-argument onboarding path: it takes the "
+                             "init_suggest proposal, scaffolds it, AND binds it as your user "
+                             "default so the next tool call resolves it (no path/remote needed).")
     def init_graph(path: Optional[str] = None, remote: Optional[str] = None,
-                   team: str = mnx_init.DEFAULT_TEAM, org: Optional[str] = None) -> dict[str, Any]:
-        return _init_graph(remote=remote, path=path, team=team, org=org)
+                   team: str = mnx_init.DEFAULT_TEAM, org: Optional[str] = None,
+                   use_default: bool = False) -> dict[str, Any]:
+        return _init_graph(remote=remote, path=path, team=team, org=org, use_default=use_default)
 
     @server.tool(name="read_frontier",
                  description="Org head + team heads (one-line descriptions + child cluster "

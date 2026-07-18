@@ -71,13 +71,22 @@ unpushed_state(binding) -> {ahead:int, unpushed:bool, branch?, kind}
     # ahead>0 ⇔ a prior promote committed but did not push; promote refuses a fresh merge while true.
 probe_remote(remote, timeout=20) -> {reachable: bool, category?: auth|not-found|network, remediation?, fallback?, ...}
     # read-only `git ls-remote` with prompts DISABLED (no hang on missing creds); BEFORE binding exists.
+write_user_default(path|remote, force=False, default_team?, author?) -> {ok, action: written|overwritten|exists, path, ...}
+    # guided setup: write <mnemex home>/config.md (the user default). EXACTLY ONE of path/remote.
+    # refuses to clobber an existing default without force; stores an ABSOLUTE path (resolves from any cwd).
 ```
+
+**Guided setup (onboarding):** `mnx_init.suggest_default_graph(cwd) -> {path, org, team, rationale}` proposes
+a local-folder default under `<mnemex home>/graphs/<project-name>` (pure; no writes). Pair it with
+`init_graph` + `write_user_default` to go from nothing to a bound, doctor-clean graph. Exposed over MCP as
+the read-only `init_suggest` tool and `init_graph(use_default=true)`; over the CLI as
+`mnx_init.py suggest-default` and `mnx_binding.py write-user-default`.
 
 `graph_slug(binding) -> str` / `Binding.staging_root() -> dir` expose the per-graph slug and the local
 side-store folder (`~/.claude/mnemex/staging/<slug>/`) used by `mnx_stage` (capture atoms) and
 `mnx_stamp` (the stamp spill); `graph_slug`/`staging_root` also appear in `resolve`/`status` JSON.
 
-CLI: `resolve | sync | status | unpushed-state | persist --message "…" | push | graph-root | staging-path | probe-remote --remote <url>`.
+CLI: `resolve | sync | status | unpushed-state | persist --message "…" | push | graph-root | staging-path | probe-remote --remote <url> | write-user-default --path <dir>|--remote <url> [--force]`.
 Each prints one JSON object. `status` folds in
 `unpushed`/`ahead` for a materialized remote clone, so callers see a stranded promote without a second
 call. `probe-remote` runs before any binding exists, so it does not call `resolve()`.

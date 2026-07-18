@@ -21,6 +21,30 @@ Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" resolve`.
   they want to **keep**, **re-point**, or **add a project-level override**. Do not silently overwrite.
 - If it does not resolve (exit 2), proceed to choose a setup mode.
 
+## 1b. Fast path — no answer needed (the default when the user just wants to start)
+
+Most first-time users have **no graph yet and no opinion** about where it lives. Do not make them
+choose. Propose a **local-folder** default and take it unless they object:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_init.py" suggest-default
+```
+
+This returns `{path, org, team, rationale}` — a plain local folder under the mnemex home named after
+this project. It **writes nothing**. Show the user the one-line `rationale`, then, unless they want a
+different location or a git remote (step 2):
+
+1. Create + bind it in one step:
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" write-user-default --path <path>` (writes the
+   `<mnemex_home>/config.md` user default; refuses to clobber an existing one without `--force`), then
+   scaffold with **step 3a**'s `init` call on that same `<path>`.
+2. Echo the resulting `resolution_line()` (run `mnx_binding.py resolve`) so the user sees exactly which
+   graph, and via which source, they are now bound to.
+
+Local first: a plain folder needs no git remote and no credentials, so it **always succeeds** — the
+point of onboarding is that nobody hits a dead end. Only go to step 2 if the user wants a git remote or
+a specific location.
+
 ## 2. Choose a mode (ask the user)
 
 | Mode | When | Result |
@@ -29,9 +53,11 @@ Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mnx_binding.py" resolve`.
 | **Bind this project** | A graph already exists; this project should use it. | Write `<project>/.mnemex.md`. |
 | **Set user default** | The user wants one fallback graph for all projects. | Write `~/.claude/mnemex/config.md`. |
 
-Independently, the graph can live as a **git remote** (`graph_remote` — cloned, synced, pushed) or a
-**local folder** (`graph_path` — used in place; for authors with no git repo). Ask which; default to git
-remote when the user has one, local folder otherwise.
+Independently, the graph can live as a **local folder** (`graph_path` — used in place; no git, no
+credentials, always works) or a **git remote** (`graph_remote` — cloned, synced, pushed; for sharing a
+graph across machines or a team). **Default to a local folder** (step 1b's proposal) — it never fails on
+auth or network. Offer a git remote only when the user explicitly wants to share the graph or already
+has a repo for it.
 
 `.mnemex.md` (project) **overrides** the user-level file, which is overridden only by the
 `MNEMEX_GRAPH_REMOTE` / `MNEMEX_GRAPH_PATH` env vars (the resolution chain). Pick the narrowest scope that

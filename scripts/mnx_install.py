@@ -54,7 +54,15 @@ _ENV_KEYS = ("MNEMEX_GRAPH_PATH", "MNEMEX_GRAPH_REMOTE", "MNEMEX_HOME")
 
 
 class InstallError(Exception):
-    """A precondition the installer cannot safely work around (bad JSON, unsupported scope)."""
+    """A precondition the installer cannot safely work around (bad JSON, unsupported scope).
+
+    ``code`` is an optional stable machine slug (e.g. ``no-graph-to-pin``); when set, the CLI emits
+    ``{"error": code, "message": ...}`` instead of the bare ``{"error": <message>}`` — a structured
+    contract for callers that branch on the failure, matching mnx_init._InitError."""
+
+    def __init__(self, message: str, code: Optional[str] = None):
+        super().__init__(message)
+        self.code = code
 
 
 # --- shared text-splice editors -------------------------------------------------------
@@ -437,15 +445,80 @@ _DEFAULT_SCOPE = {
 
 
 def build_plan(agent: str, *, scope: Optional[str] = None, project_root: Optional[Path] = None,
-                pin_graph: bool = False, uninstall: bool = False) -> InstallPlan:
+                pin_graph: bool = False, uninstall: bool = False,
+                pin_env_override: Optional[dict] = None) -> InstallPlan:
     if agent not in _ADAPTERS:
         raise InstallError(f"unknown agent {agent!r}; choose one of {sorted(_ADAPTERS)}")
     root = (project_root or Path.cwd()).resolve()
     resolved_scope = scope or _DEFAULT_SCOPE[agent]
     if resolved_scope not in ("project", "user"):
         raise InstallError(f"scope must be 'project' or 'user', got {resolved_scope!r}")
-    pin_env = _pin_env(root) if pin_graph else None
+    pin_env = None
+    if pin_graph and not uninstall:
+        # A guided --init-graph run just created a graph and passes it here directly, since a
+        # pre-existing user default would otherwise make resolve() return the OLD graph — we must
+        # pin the one we just made.
+        pin_env = pin_env_override or _pin_env(root)
+        if pin_env is None:
+            # F3: --pin-graph with NO resolvable binding used to write a silent unpinned entry (the
+            # env block just omitted). Refuse loudly instead — the operator asked to pin a specific
+            # graph and there is none; a silently-unpinned entry that then resolves to some *other*
+            # graph is exactly the misroute this flag exists to prevent.
+            raise InstallError(
+                f"--pin-graph was requested but no Mnemex graph binding resolves from {root}. "
+                "Create one first (openmnemex install --agent <a> --init-graph, or "
+                "python3 scripts/mnx_init.py init --path <dir>), or drop --pin-graph to write an "
+                "unpinned entry that resolves per-project at run time.",
+                code="no-graph-to-pin")
     return _ADAPTERS[agent](resolved_scope, root, pin_env, uninstall)
+
+
+def _prompt_graph_path(proposal: dict[str, Any]) -> Optional[str]:
+    """TTY-only confirm/override of the proposed graph folder. Returns an alternate path, or None to
+    accept the proposal. Never called unless stdin is a real TTY (CI/non-TTY auto-accepts)."""
+    print(f"openmnemex: no graph is configured yet. Proposed local-folder graph:\n"
+          f"  {proposal['path']}\n  {proposal['rationale']}", file=sys.stderr)
+    try:
+        resp = input("Press Enter to accept, or type a different folder path: ").strip()
+    except EOFError:
+        return None
+    return resp or None
+
+
+def _guided_setup(root: Path, *, dry_run: bool, interactive: bool = False) -> dict[str, Any]:
+    """The ``--init-graph`` guided setup: propose a local-folder default, scaffold it doctor-clean,
+    and bind it as the user default — so a fresh machine goes from nothing to a usable graph in one
+    command. Returns the setup report plus ``pin_env`` (the NEW graph, authoritative over any
+    pre-existing user default) for the installer to pin into the MCP entry. ``dry_run`` computes the
+    proposal and reports what WOULD happen without writing anything (CI safety). ``interactive``
+    (TTY only) lets the user confirm or override the proposed path before anything is written."""
+    import mnx_binding
+    import mnx_init
+    proposal = mnx_init.suggest_default_graph(root)
+    if interactive and not dry_run:
+        override = _prompt_graph_path(proposal)
+        if override:
+            abspath = str(Path(override).expanduser().resolve())
+            proposal = {**proposal, "path": abspath, "exists": Path(abspath).joinpath(
+                "mnemex.config.md").is_file()}
+    pin_env = {"MNEMEX_GRAPH_PATH": proposal["path"]}
+    if dry_run:
+        return {"ok": True, "dry_run": True, "action": "would-create", "proposal": proposal,
+                "pin_env": pin_env}
+    try:
+        init_result = mnx_init.init_graph(path=proposal["path"], team=proposal["team"],
+                                          org=proposal["org"])
+    except mnx_init._InitError as ie:
+        return {"ok": False, "error": ie.code, "message": str(ie), "action": ie.action,
+                "proposal": proposal}
+    # Bind it as the user default so any project without its own .mnemex.md resolves it. Never
+    # clobber a user default the user already set (write_user_default refuses without force) — the
+    # pinned MCP entry below still binds THIS host to the new graph, so setup succeeds either way.
+    wud = mnx_binding.write_user_default(path=proposal["path"], default_team=proposal["team"])
+    return {"ok": True, "action": init_result.get("action"), "proposal": proposal,
+            "graph_root": init_result.get("graph_root"),
+            "doctor_clean": init_result.get("doctor_clean"),
+            "user_default": wud, "pin_env": pin_env}
 
 
 # --- applying a plan ---------------------------------------------------------------------
@@ -505,15 +578,31 @@ def apply_plan(plan: InstallPlan, *, dry_run: bool = False, yes: bool = False) -
 
 def install(agent: str, *, scope: Optional[str] = None, project_root: Optional[str] = None,
             uninstall: bool = False, check: bool = False, dry_run: bool = False,
-            yes: bool = False, pin_graph: bool = False) -> dict[str, Any]:
+            yes: bool = False, pin_graph: bool = False, init_graph: bool = False,
+            interactive: bool = False) -> dict[str, Any]:
     """The importable delegate behind ``openmnemex install`` — build a plan and (unless
-    ``dry_run``) apply it. ``check`` short-circuits into environment verification instead."""
+    ``dry_run``) apply it. ``check`` short-circuits into environment verification instead.
+    ``init_graph`` runs guided setup first (create + bind a local-folder graph) and pins the new
+    graph into the emitted entry, so a fresh machine needs no separate init step. ``interactive``
+    (set only by the CLI on a real TTY) lets guided setup confirm/override the graph path."""
     root = Path(project_root).resolve() if project_root else Path.cwd()
     if check:
         return check_install(root)
+    setup: Optional[dict[str, Any]] = None
+    pin_env_override: Optional[dict] = None
+    if init_graph and not uninstall:
+        setup = _guided_setup(root, dry_run=dry_run, interactive=interactive)
+        if not setup.get("ok", True):
+            return {"ok": False, "agent": agent, "error": setup.get("error", "init-graph-failed"),
+                    "message": setup.get("message"), "graph_setup": setup}
+        pin_graph = True  # a graph we just created is worth pinning explicitly into the entry
+        pin_env_override = setup.get("pin_env")
     plan = build_plan(agent, scope=scope, project_root=root, pin_graph=pin_graph,
-                       uninstall=uninstall)
-    return apply_plan(plan, dry_run=dry_run, yes=yes)
+                       uninstall=uninstall, pin_env_override=pin_env_override)
+    result = apply_plan(plan, dry_run=dry_run, yes=yes)
+    if setup is not None:
+        result["graph_setup"] = setup
+    return result
 
 
 def check_install(project_root: Path) -> dict[str, Any]:
@@ -525,8 +614,10 @@ def check_install(project_root: Path) -> dict[str, Any]:
     result["binding"] = {"resolved": binding is not None}
     if binding is None:
         result["ok"] = False
-        result["binding"]["hint"] = "run 'openmnemex install' from inside a bound project, or " \
-                                     "run mnx_init.py init first"
+        result["binding"]["hint"] = ("no graph is configured — run 'openmnemex install --agent "
+                                     "<agent> --init-graph --yes' to create a local-folder graph "
+                                     "and bind it in one step, or 'python3 scripts/mnx_init.py "
+                                     "init --path <dir>' to set one up by hand")
 
     import mnx_mcp
     info = mnx_mcp.info()
@@ -556,11 +647,13 @@ def check_install(project_root: Path) -> dict[str, Any]:
 
 _USAGE = [
     "mnx_install.py install --agent {claude-code,opencode,gemini-cli,codex,copilot,cursor}"
-    " [--project|--user] [--uninstall] [--check] [--dry-run] [--yes] [--pin-graph]"
-    "  — emit/remove the MCP entry + instruction-file block for one target agent",
+    " [--project|--user] [--uninstall] [--check] [--dry-run] [--yes] [--pin-graph] [--init-graph]"
+    "  — emit/remove the MCP entry + instruction-file block for one target agent"
+    "  (--init-graph: create + bind a local-folder graph first, then pin it into the entry)",
 ]
 _FLAGS = {"--agent": True, "--project": False, "--user": False, "--uninstall": False,
-          "--check": False, "--dry-run": False, "--yes": False, "--pin-graph": False}
+          "--check": False, "--dry-run": False, "--yes": False, "--pin-graph": False,
+          "--init-graph": False}
 
 
 def _main(argv: list[str]) -> int:
@@ -573,7 +666,7 @@ def _main(argv: list[str]) -> int:
     rest = argv[2:]
     agent = None
     scope = None
-    uninstall = check = dry_run = yes = pin_graph = False
+    uninstall = check = dry_run = yes = pin_graph = init_graph = False
     i = 0
     while i < len(rest):
         tok = rest[i]
@@ -594,15 +687,23 @@ def _main(argv: list[str]) -> int:
             yes = True
         elif tok == "--pin-graph":
             pin_graph = True
+        elif tok == "--init-graph":
+            init_graph = True
         i += 1
     if not agent and not check:
         return mnx_common.emit({"error": "--agent is required", "usage": _USAGE}, ok=False)
+    # Interactivity is TTY-gated (plan Phase 1): --yes / --dry-run / a non-TTY stdin all stay
+    # non-interactive so CI and scripted installs never block on a prompt.
+    interactive = init_graph and not yes and not dry_run and sys.stdin.isatty()
     try:
         result = install(agent or "claude-code", scope=scope, uninstall=uninstall, check=check,
-                          dry_run=dry_run, yes=yes, pin_graph=pin_graph)
+                          dry_run=dry_run, yes=yes, pin_graph=pin_graph, init_graph=init_graph,
+                          interactive=interactive)
         return mnx_common.emit(result, ok=result.get("ok", True))
     except InstallError as exc:
-        return mnx_common.emit({"error": str(exc)}, ok=False)
+        payload = ({"error": exc.code, "message": str(exc)} if exc.code
+                   else {"error": str(exc)})
+        return mnx_common.emit(payload, ok=False)
 
 
 def main() -> int:

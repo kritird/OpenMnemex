@@ -125,6 +125,35 @@ def scaffold(root: str | Path, team: str = DEFAULT_TEAM,
             "created": created, "skipped": skipped}
 
 
+# --- guided-setup proposal (pure; no writes) ----------------------------------
+
+def suggest_default_graph(cwd: Optional[str | Path] = None) -> dict[str, Any]:
+    """Propose a local-folder graph for a user who has none. Pure computation — no writes.
+
+    The proposal is ``<mnemex_home>/graphs/<project-name>`` as a plain local folder: **local
+    first** (no git remote, no credentials, always succeeds — onboarding plan Phase 1), named
+    after the current project so a user working across several projects gets distinct default
+    graphs instead of one shared bucket. Nothing here scaffolds or writes a binding — callers
+    compose that (``init_graph`` + ``mnx_binding.write_user_default``), so this stays safe to call
+    for a preview (the ``init_suggest`` MCP tool; the installer's ``--init-graph`` dry-run plan).
+    """
+    start = Path(cwd).expanduser() if cwd else Path.cwd()
+    project = start.resolve().name or "knowledge-graph"
+    slug = mnx_common.slugify(project)
+    path = mnx_binding.graphs_cache_root() / slug
+    return {
+        "path": str(path),
+        "slug": slug,
+        "org": project,
+        "team": DEFAULT_TEAM,
+        "exists": (path / _CONFIG_FILE).is_file(),
+        "rationale": (
+            f"A plain local folder at {path} — no git remote, no credentials, always works. "
+            f"Named after this project ({project}). You can change it any time: re-run init with a "
+            "different --path, or point Mnemex at a git remote instead."),
+    }
+
+
 # --- first-contact init (scaffold + day-one clean) ----------------------------
 
 def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
@@ -254,6 +283,7 @@ _USAGE = [
     "mnx_init.py scaffold <root> [--team <name>] [--org <name>]   — empty graph skeleton (non-destructive)",
     "mnx_init.py init --path <dir> [--team <name>] [--org <name>]  — scaffold + merge-driver + stamp + doctor",
     "mnx_init.py init --remote <url> [--team <name>] [--org <name>] — scaffold onto an EMPTY remote and push",
+    "mnx_init.py suggest-default [<cwd>]                           — propose a local-folder default graph (no writes)",
 ]
 _FLAGS = {"--team": True, "--org": True, "--path": True, "--remote": True, "--desc": True}
 
@@ -275,6 +305,9 @@ def _main(argv: list[str]) -> int:
     org = _flag(argv, "--org")
     desc = _flag(argv, "--desc")
     try:
+        if cmd == "suggest-default":
+            cwd = argv[2] if len(argv) > 2 and not argv[2].startswith("-") else None
+            return mnx_common.emit(suggest_default_graph(cwd))
         if cmd == "scaffold":
             root = argv[2] if len(argv) > 2 and not argv[2].startswith("-") else None
             if not root:

@@ -304,11 +304,23 @@ A complete walkthrough — from install to daily usage, with the hooks that fire
 ### Other agents
 
 Claude Code gets the full plugin experience above (auto-capture hooks, skills). Every other MCP-capable
-agent gets the same read/capture/promote loop over the stdio MCP server, wired up with one command:
+agent gets the same read/capture/promote loop over the stdio MCP server, wired up with one command.
+For step-by-step, per-agent instructions (install → what changed → how to verify → which tier to
+expect), see [`docs/agent-setup.md`](docs/agent-setup.md).
 
 ```bash
+# 60-second start: create a local-folder graph, bind it, and pin it into the entry — zero prompts.
+uvx openmnemex install --agent <agent> --init-graph --yes
+
+# …or wire up the server against a graph you already have:
 uvx openmnemex install --agent <agent> [--project|--user] [--pin-graph]
 ```
+
+`--init-graph` is the no-decisions path: it proposes a plain local folder under your mnemex home
+(no git remote, no credentials — it always succeeds), scaffolds it doctor-clean, binds it as your user
+default, and pins that graph into the agent's MCP entry. Nothing to choose, no dead end on the first
+read. `--pin-graph` **without** a graph now errors clearly instead of silently writing an unpinned
+entry.
 
 | `--agent` | Config written | Tier |
 |---|---|---|

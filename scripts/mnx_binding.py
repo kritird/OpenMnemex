@@ -273,6 +273,61 @@ def resolve(start_dir: Optional[str] = None) -> Optional[Binding]:
     return None
 
 
+# --- user-default persistence (guided setup) --------------------------------
+
+def _render_user_default(path: Optional[str], remote: Optional[str],
+                         default_team: Optional[str], author: Optional[str]) -> str:
+    """The stock ``config.md`` a guided-setup run writes: valid YAML front-matter (exactly one of
+    graph_remote / graph_path filled) + a short prose reminder. Empty optional fields render as a
+    bare ``key:`` (parses to None), matching templates/user-config.template.md."""
+    lines = ["---",
+             "# User-level Mnemex default. Lives at <mnemex_home>/config.md (durable; NOT in the plugin dir).",
+             "# Fallback graph for any project without its own .mnemex.md and no env override.",
+             "#",
+             "# Exactly one of graph_remote / graph_path is set below."]
+    if remote:
+        lines += [f"graph_remote: {remote}", "graph_path:"]
+    else:
+        lines += ["graph_remote:", f"graph_path: {path}"]
+    lines.append(f"default_team: {default_team}" if default_team else "default_team:")
+    lines.append(f"author: {author}" if author else "author:")
+    lines += ["---", "",
+              "# Mnemex user default", "",
+              "Your fallback knowledge graph. A project's own `.mnemex.md` (and the "
+              "`MNEMEX_GRAPH_REMOTE` / `MNEMEX_GRAPH_PATH` env vars) take precedence over this "
+              "file. See `docs/binding-and-graph-sync.md`.", ""]
+    return "\n".join(lines)
+
+
+def write_user_default(path: Optional[str] = None, remote: Optional[str] = None, *,
+                       force: bool = False, default_team: Optional[str] = None,
+                       author: Optional[str] = None) -> dict[str, Any]:
+    """Write ``<mnemex_home>/config.md`` — the user-default binding used by any project with no own
+    ``.mnemex.md`` and no env override. Set EXACTLY ONE of ``path`` / ``remote``.
+
+    Refuses to clobber an existing user default unless ``force`` (guided setup must never silently
+    replace a binding the user already has — reported as ``{"ok": false, "action": "exists"}`` so a
+    caller can surface it, not a traceback). Local paths are stored ABSOLUTE so the default resolves
+    identically from every cwd (a relative graph_path in the user default would follow the caller's
+    working directory — exactly the silent-misroute this file exists to avoid).
+    """
+    if bool(path) == bool(remote):
+        raise ValueError("write_user_default needs exactly one of path / remote.")
+    if path:
+        path = os.path.abspath(os.path.expanduser(str(path)))
+    target = user_config_path()
+    existed = target.is_file()
+    if existed and not force:
+        return {"ok": False, "action": "exists", "path": str(target),
+                "message": (f"A user default already exists at {target}. Pass force=True to "
+                            "overwrite it, or bind this project with a .mnemex.md instead.")}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_render_user_default(path, remote, default_team, author), encoding="utf-8")
+    return {"ok": True, "action": "overwritten" if existed else "written",
+            "path": str(target), "graph_path": path, "graph_remote": remote,
+            "default_team": default_team}
+
+
 # --- git --------------------------------------------------------------------
 
 def _git(args: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
@@ -597,10 +652,13 @@ _USAGE = [
     'mnx_binding.py unpushed-state                   — committed-but-unpushed promote state',
     'mnx_binding.py graph-root | staging-path        — print the resolved path (exit 2 if unbound)',
     'mnx_binding.py probe-remote --remote <url>      — read-only reachability + auth pre-flight',
+    'mnx_binding.py write-user-default --path <dir> | --remote <url> [--force] [--default-team <t>]'
+    '  — write the <mnemex_home>/config.md user default (refuses to clobber without --force)',
     'mnx_binding.py persist [--message <m>]          — commit (+push) graph changes',
     'mnx_binding.py push                             — push the current branch',
 ]
-_FLAGS = {"--remote": True, "--message": True}
+_FLAGS = {"--remote": True, "--message": True, "--path": True, "--force": False,
+          "--default-team": True, "--author": True}
 
 
 def _main(argv: list[str]) -> int:
@@ -622,6 +680,17 @@ def _main(argv: list[str]) -> int:
             return _emit({"error": "probe-remote needs --remote <url>"}, EXIT_ERROR)
         res = probe_remote(remote)
         return _emit(res, EXIT_OK if res.get("reachable") else EXIT_ERROR)
+
+    if cmd == "write-user-default":  # runs BEFORE a binding exists — must not call resolve()
+        path = _arg_after(argv, "--path")
+        remote = _arg_after(argv, "--remote")
+        if bool(path) == bool(remote):
+            return _emit({"error": "write-user-default needs exactly one of --path / --remote"},
+                         EXIT_ERROR)
+        res = write_user_default(path=path, remote=remote, force="--force" in argv,
+                                 default_team=_arg_after(argv, "--default-team"),
+                                 author=_arg_after(argv, "--author"))
+        return _emit(res, EXIT_OK if res.get("ok") else EXIT_ERROR)
 
     try:
         b = resolve()
