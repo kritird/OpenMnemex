@@ -1,16 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="524" height="227" viewBox="0 0 524 227">
+<svg xmlns="http://www.w3.org/2000/svg" width="842" height="134" viewBox="0 0 842 134">
 <rect width="100%" height="100%" fill="none"/>
 <style>text { font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace; font-size: 15px; white-space: pre; }</style>
-<text x="10" y="20" fill="#2dd4bf" xml:space="preserve">           ██████╗ ██████╗ ███████╗███╗   ██╗</text>
-<text x="10" y="37.25" fill="#2dd4bf" xml:space="preserve">          ██╔═══██╗██╔══██╗██╔════╝████╗  ██║</text>
-<text x="10" y="54.5" fill="#2dd4bf" xml:space="preserve">          ██║   ██║██████╔╝█████╗  ██╔██╗ ██║</text>
-<text x="10" y="71.75" fill="#2dd4bf" xml:space="preserve">          ██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║</text>
-<text x="10" y="89.0" fill="#2dd4bf" xml:space="preserve">          ╚██████╔╝██║     ███████╗██║ ╚████║</text>
-<text x="10" y="106.25" fill="#2dd4bf" xml:space="preserve">           ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝</text>
-<text x="10" y="123.5" fill="#a855f7" xml:space="preserve">███╗   ███╗███╗   ██╗███████╗███╗   ███╗███████╗██╗  ██╗</text>
-<text x="10" y="140.75" fill="#a855f7" xml:space="preserve">████╗ ████║████╗  ██║██╔════╝████╗ ████║██╔════╝╚██╗██╔╝</text>
-<text x="10" y="158.0" fill="#a855f7" xml:space="preserve">██╔████╔██║██╔██╗ ██║█████╗  ██╔████╔██║█████╗   ╚███╔╝ </text>
-<text x="10" y="175.25" fill="#a855f7" xml:space="preserve">██║╚██╔╝██║██║╚██╗██║██╔══╝  ██║╚██╔╝██║██╔══╝   ██╔██╗ </text>
-<text x="10" y="192.5" fill="#a855f7" xml:space="preserve">██║ ╚═╝ ██║██║ ╚████║███████╗██║ ╚═╝ ██║███████╗██╔╝ ██╗</text>
-<text x="10" y="209.75" fill="#a855f7" xml:space="preserve">╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝</text>
+<text x="10" y="20" xml:space="preserve"><tspan fill="#2dd4bf"> ██████╗ ██████╗ ███████╗███╗   ██╗</tspan><tspan fill="#a855f7">███╗   ███╗███╗   ██╗███████╗███╗   ███╗███████╗██╗  ██╗</tspan></text>
+<text x="10" y="37.25" xml:space="preserve"><tspan fill="#2dd4bf">██╔═══██╗██╔══██╗██╔════╝████╗  ██║</tspan><tspan fill="#a855f7">████╗ ████║████╗  ██║██╔════╝████╗ ████║██╔════╝╚██╗██╔╝</tspan></text>
+<text x="10" y="54.5" xml:space="preserve"><tspan fill="#2dd4bf">██║   ██║██████╔╝█████╗  ██╔██╗ ██║</tspan><tspan fill="#a855f7">██╔████╔██║██╔██╗ ██║█████╗  ██╔████╔██║█████╗   ╚███╔╝ </tspan></text>
+<text x="10" y="71.75" xml:space="preserve"><tspan fill="#2dd4bf">██║   ██║██╔═══╝ ██╔══╝  ██║╚██╗██║</tspan><tspan fill="#a855f7">██║╚██╔╝██║██║╚██╗██║██╔══╝  ██║╚██╔╝██║██╔══╝   ██╔██╗ </tspan></text>
+<text x="10" y="89.0" xml:space="preserve"><tspan fill="#2dd4bf">╚██████╔╝██║     ███████╗██║ ╚████║</tspan><tspan fill="#a855f7">██║ ╚═╝ ██║██║ ╚████║███████╗██║ ╚═╝ ██║███████╗██╔╝ ██╗</tspan></text>
+<text x="10" y="106.25" xml:space="preserve"><tspan fill="#2dd4bf"> ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═══╝</tspan><tspan fill="#a855f7">╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝</tspan></text>
 </svg>
