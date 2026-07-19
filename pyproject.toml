@@ -45,6 +45,10 @@ dependencies = ["pyyaml>=6.0"]
 # module outside the future scripts/mnx_mcp.py may import it (guarded by
 # tests/test_packaging_imports.py::test_engine_never_imports_mcp_sdk).
 mcp = ["mcp>=1.2.0; python_version >= '3.10'"]
+# The local view-only web viewer (`mnx serve`, viewer plan V1.1). Same pattern as [mcp]:
+# core stays dependency-free; scripts/mnx_serve.py soft-imports these and the console
+# script exits 1 with the install hint when they are missing.
+viewer = ["fastapi>=0.110", "uvicorn>=0.23"]
 
 [project.scripts]
 # The stdio MCP server (plan v2 Phase 1, commit 1a). Installed unconditionally but the
@@ -52,8 +56,12 @@ mcp = ["mcp>=1.2.0; python_version >= '3.10'"]
 # hint instead of a missing-command error.
 openmnemex-mcp = "openmnemex.mnx_mcp:main"
 # The per-agent installer (plan v2 §7 Phase 5, commit 5a). Needs no extras — it only
-# writes config files / shells out to each agent's own CLI.
+# writes config files / shells out to each agent's own CLI. Also fronts the viewer:
+# `openmnemex serve` delegates to mnx_serve (viewer plan J1: `uvx openmnemex serve`).
 openmnemex = "openmnemex.mnx_install:main"
+# The local view-only viewer (viewer plan V1.1). Installed unconditionally but the server
+# needs the [viewer] extra — without it the binary exits 1 with the install hint.
+openmnemex-serve = "openmnemex.mnx_serve:main"
 
 [project.urls]
 Homepage = "https://github.com/kritird/OpenMnemex"
