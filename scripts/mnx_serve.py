@@ -4,13 +4,20 @@ A permanently VIEW-ONLY web surface over any local graph: ``openmnemex-serve`` (
 ``uvx openmnemex serve``) starts a localhost HTTP server whose JSON API renders what the
 engine read paths already expose — tree, nodes+edges, node detail, search, health, the
 revalidation queue, effective config, and machine-level agent connection status. The SPA
-frontend (Phase V1.2+) consumes this API; until then ``/`` serves a minimal endpoint list.
+frontend (``viewer/static/``, no build step — plain ES modules + vendored Cytoscape) is
+served from ``/`` with ``/g/{graph}/…`` deep links and ``/static/*`` assets; the files
+resolve through ``mnx_common.viewer_static_dir()`` (checkout first, else the
+``openmnemex.data.viewer`` wheel copy).
 
-Write surface (the FULL list, by decision 2026-07-19 — docs/viewer-build-plan.md §1):
+Write surface (the FULL list; base decision 2026-07-19, connect added 2026-07-20 —
+docs/viewer-build-plan.md §1):
   * ``POST /api/graphs/create`` — scaffold a brand-new graph via the shared
     ``mnx_init.init_graph`` (the same code path as MCP ``init_graph`` and the mnx-init
     skill), refused unless the target folder is fresh/empty;
-  * ``POST /api/graphs/rescan`` — a registry-only write (the known-graphs ledger).
+  * ``POST /api/graphs/rescan`` — a registry-only write (the known-graphs ledger);
+  * ``POST /api/agents/connect`` — write an agent's machine-level Mnemex config via the
+    shared ``mnx_install.install`` (the same code path as ``openmnemex install``), only
+    on the user's Connect click. Touches agent config files, never graph knowledge.
 Every graph-scoped route is read-only, forever. No capture, promote, revalidate, or
 config editing from this surface — those belong to the agents (MCP/plugin) and the CLI.
 
@@ -441,6 +448,11 @@ def _node_entry(node: dict[str, Any], root: Path, cluster: Path, cfg: dict[str, 
                                        mnx_decay.lam_for(ntype, cfg))
     except Exception:
         strength_now = 0.0
+    try:
+        # exposed so the viewer tooltip can show it — the frontend never does λ math
+        half_life_days = round(mnx_decay.half_life_for(ntype, cfg), 1)
+    except Exception:
+        half_life_days = None
     stale_at = mnx_config.resolve_horizon(node, cfg)
     return {
         "id": nid,
@@ -454,6 +466,7 @@ def _node_entry(node: dict[str, Any], root: Path, cluster: Path, cfg: dict[str, 
         "node_type": ntype,
         "volatility": node.get("volatility", "default"),
         "strength_now": round(strength_now, 6),
+        "half_life_days": half_life_days,
         "hotness_bucket": _hotness_bucket(strength_now, float(cfg.get("strength_max", 1.0))),
         "verified": node.get("verified"),
         "stale_at": stale_at,
@@ -918,7 +931,8 @@ def _agent_row(agent: str, installed: Optional[bool], connected: str,
 
 def agents_payload() -> dict[str, Any]:
     """``GET /api/agents`` — detected agents + Mnemex connection state (adapter-marker
-    reads only; the viewer NEVER writes agent configs). Claude Code is dual-path-aware:
+    reads only; writes happen solely through ``connect_agent_payload``, on the user's
+    explicit Connect click). Claude Code is dual-path-aware:
     plugin vs MCP, plugin recommended, double-connection warned (plan §2 J4)."""
     home = Path.home()
     rows: list[dict[str, Any]] = []
@@ -972,8 +986,44 @@ def agents_payload() -> dict[str, Any]:
              "state to read; run the install command inside the project."))
 
     return {"ok": True, "agents": rows,
-            "read_only_note": "The viewer only shows connection state; connecting stays "
-                              "in the CLI (openmnemex install)."}
+            "note": "Connect writes the same machine-level config the CLI installer would "
+                    "(openmnemex install --agent <a> --user); knowledge stays read-only."}
+
+
+# Agents the Connect button can wire machine-wide (scope="user"), so the write lands
+# exactly where agents_payload's detection reads. copilot is excluded by upstream
+# design: VS Code has no static user-level MCP file (per-project .vscode/mcp.json only).
+_CONNECTABLE_AGENTS = ("claude-code", "gemini-cli", "codex", "cursor", "opencode")
+
+
+def connect_agent_payload(agent: str) -> dict[str, Any]:
+    """``POST /api/agents/connect`` — one-click connect (Kriti, 2026-07-20: the screen
+    should connect, not hand out commands to paste). Delegates to the SAME shared
+    installer the CLI uses (``mnx_install.install``), user scope, so the viewer can
+    never drift from ``openmnemex install`` behavior. This is the viewer's only
+    agent-config write, and it happens solely on the user's button press."""
+    if agent not in _CONNECTABLE_AGENTS:
+        raise ViewerError(
+            "not-connectable", f"{agent!r} cannot be connected machine-wide from here",
+            "copilot's MCP config is per-project — run "
+            "'openmnemex install --agent copilot --project' inside the project",
+            http_status=400)
+    import mnx_install
+    try:
+        result = mnx_install.install(agent, scope="user", yes=True)
+    except mnx_install.InstallError as exc:
+        raise ViewerError("connect-failed", str(exc),
+                          f"try the CLI: openmnemex install --agent {agent} --user",
+                          http_status=500)
+    if not result.get("ok"):
+        detail = result.get("error") or "; ".join(result.get("shell_errors", []) or []) \
+            or "; ".join(r.get("stderr", "") for r in result.get("ran", []) if r.get("returncode"))
+        raise ViewerError("connect-failed", detail or "the installer reported a failure",
+                          f"try the CLI: openmnemex install --agent {agent} --user",
+                          http_status=500)
+    # fresh detection so the UI can re-render the new state without a second request
+    return {**agents_payload(), "connected_agent": agent,
+            "install_notes": result.get("notes", [])}
 
 
 def _read_text_safe(path: Path) -> str:
@@ -981,6 +1031,45 @@ def _read_text_safe(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def fs_dirs_payload(path: Optional[str] = None) -> dict[str, Any]:
+    """``GET /api/fs/dirs?path=`` — subfolders of one directory, for the UI's folder
+    browser. Browsers never reveal a native picker's absolute path to a web page (even
+    on localhost), so the "Open a folder…"/"create graph" dialogs browse via the server
+    instead. Read-only, names only, directories only; hidden folders are skipped.
+    Viewer-surface-specific by design (CLAUDE.md parity note: MCP/skill callers browse
+    the filesystem directly — no equivalent needed there)."""
+    base = Path(path).expanduser() if path else Path.home()
+    try:
+        base = base.resolve()
+    except OSError:
+        pass
+    if not base.is_dir():
+        raise ViewerError("not-a-folder", f"{base} is not a folder.",
+                          "pass a directory path, or omit path for $HOME",
+                          http_status=404)
+    dirs: list[dict[str, Any]] = []
+    denied = False
+    try:
+        for child in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+            if child.name.startswith("."):
+                continue
+            try:
+                if not child.is_dir() or child.is_symlink():
+                    continue
+                dirs.append({"name": child.name, "path": str(child),
+                             "is_graph": (child / mnx_common.CONFIG_FILENAME).is_file()})
+            except OSError:
+                continue
+    except PermissionError:
+        denied = True
+    return {"ok": True, "path": str(base),
+            "parent": str(base.parent) if base.parent != base else None,
+            "home": str(Path.home()),
+            "is_graph": (base / mnx_common.CONFIG_FILENAME).is_file(),
+            "dirs": dirs,
+            **({"denied": True} if denied else {})}
 
 
 # --- the FastAPI app -----------------------------------------------------------
@@ -996,10 +1085,13 @@ def deps_available() -> bool:
     return fastapi is not None and uvicorn is not None
 
 
-_LANDING = """<!doctype html><meta charset="utf-8"><title>OpenMnemex viewer</title>
+# Fallback landing when the SPA files are missing (broken/partial install): the API
+# still works, so say so instead of 404ing the root.
+_NO_FRONTEND = """<!doctype html><meta charset="utf-8"><title>OpenMnemex viewer</title>
 <body style="font-family:system-ui;max-width:44rem;margin:3rem auto;color:#222">
 <h1 style="font-family:monospace">OpenMnemex viewer</h1>
-<p>Backend API is up (Phase V1.1). The graph UI arrives in Phase V1.2.</p>
+<p>The API is up, but the frontend files (viewer/static/) were not found in this
+install — reinstall the package, or run from a checkout.</p>
 <ul>
 <li><a href="/api/graphs">/api/graphs</a> — discovered graphs</li>
 <li>/api/graph/{slug}/tree · /nodes · /node/{id} · /search?q= · /health · /queue · /config</li>
@@ -1007,13 +1099,35 @@ _LANDING = """<!doctype html><meta charset="utf-8"><title>OpenMnemex viewer</tit
 </ul></body>"""
 
 
+def static_asset(rel: str):
+    """Resolve a path inside viewer/static via the Traversable API — one code path for
+    both a checkout (``pathlib.Path``) and a wheel install (``importlib.resources``).
+    Returns the file node, or ``None`` for misses and any traversal attempt."""
+    root = mnx_common.viewer_static_dir()
+    node = root
+    for part in Path(rel).parts:
+        if part in ("..", "/", "\\") or part.startswith("~"):
+            return None
+        node = node / part
+    try:
+        return node if node.is_file() else None
+    except (OSError, ValueError):
+        return None
+
+
+def index_html() -> Optional[str]:
+    """The SPA entry (served for ``/`` and every ``/g/...`` deep link)."""
+    idx = static_asset("index.html")
+    return idx.read_text(encoding="utf-8") if idx is not None else None
+
+
 def create_app():
     """Build the FastAPI app (requires the [viewer] extra). Read-only by construction:
-    the only POSTs are create-graph and rescan (see module docstring)."""
+    the only POSTs are create-graph, rescan, and agent connect (see module docstring)."""
     if not deps_available():
         raise RuntimeError(_deps_missing_message())
     from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, Response
 
     app = FastAPI(title=SERVER_NAME, version=engine_version(), docs_url="/api/docs",
                   redoc_url=None)
@@ -1034,13 +1148,41 @@ def create_app():
         response = await call_next(request)
         ms = (time.monotonic() - t0) * 1000.0
         path = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-        if path != "/favicon.ico":
+        if path != "/favicon.ico" and not path.startswith("/static/"):
             print(f"  {request.method} {path} → {response.status_code} ({ms:.0f} ms)")
         return response
 
     @app.get("/", response_class=HTMLResponse)
     async def landing():
-        return _LANDING
+        # no-store: the SPA shell must never go stale across an upgrade
+        return HTMLResponse(index_html() or _NO_FRONTEND,
+                            headers={"cache-control": "no-store"})
+
+    @app.get("/g/{rest:path}", response_class=HTMLResponse)
+    async def spa_deep_link(rest: str):
+        # Path routing (viewer plan V1.2): /g/{graph}/… is deep-linkable; the SPA
+        # router (viewer/static/js/router.js) reads the URL after load.
+        return HTMLResponse(index_html() or _NO_FRONTEND,
+                            headers={"cache-control": "no-store"})
+
+    @app.get("/connections", response_class=HTMLResponse)
+    async def spa_connections():
+        # V1.4: the agent-connections screen is deep-linkable like /g/* routes.
+        return HTMLResponse(index_html() or _NO_FRONTEND,
+                            headers={"cache-control": "no-store"})
+
+    @app.get("/static/{rel:path}")
+    async def static_file(rel: str):
+        node = static_asset(rel)
+        if node is None:
+            raise ViewerError("not-found", f"no static file {rel!r}",
+                              "the viewer's own assets live under /static/",
+                              http_status=404)
+        import mimetypes
+        media, _enc = mimetypes.guess_type(rel)
+        return Response(content=node.read_bytes(),
+                        media_type=media or "application/octet-stream",
+                        headers={"cache-control": "no-store"})
 
     @app.get("/api/graphs")
     async def api_graphs():
@@ -1089,6 +1231,15 @@ def create_app():
     @app.get("/api/agents")
     async def api_agents():
         return agents_payload()
+
+    @app.post("/api/agents/connect")
+    async def api_agents_connect(request: Request):
+        body = await _json_body(request)
+        return connect_agent_payload(str(body.get("agent", "")))
+
+    @app.get("/api/fs/dirs")
+    async def api_fs_dirs(path: Optional[str] = None):
+        return fs_dirs_payload(path)
 
     return app
 

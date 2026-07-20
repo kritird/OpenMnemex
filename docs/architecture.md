@@ -311,3 +311,25 @@ entity to one well-sourced node, a two-pass catalog keeps the `[[links]]` global
 Leiden may only *propose* a folder map at gate #1. Episodic capture needs none of that (it mines a lived
 transcript), so the one shared technique is *gleaning*. The feature holds the line: **no vectors, no
 server, no global index, no read-time clustering** — a distilled graph, not a RAG index over your source.
+
+---
+
+## 1️⃣4️⃣ The viewer's serve layer — a read-only lens over the same engine
+
+The viewer ([`viewer.md`](viewer.md)) adds no fourth kind of state and no second implementation of
+the math. `mnx_serve.py` is a thin local HTTP layer that calls the **same shared `mnx_*` engine
+functions** every other surface uses — `mnx_decay` for strength, `mnx_config` for horizons and
+knobs, `mnx_doctor` for health, `mnx_binding`'s registry for discovery — and serializes their
+answers for a browser. Strength, freshness, half-lives, and queue order are all computed
+**server-side**; the frontend renders numbers, it never derives them. That is what makes the
+time scrubber honest: `?at=<timestamp>` re-runs the same lazy-decay computation at a projected
+date, so the "graph in 90 days" view is the engine's own answer, not a UI estimate.
+
+It is **read-only by construction** over existing graphs: the only writes in the whole module are
+graph *registration* (the discovery ledger), the first-run `mnx_init` scaffold onto an empty
+folder, and the Connections screen's one-click agent connect — which writes an agent's own MCP
+config via the shared `mnx_install` installer, never a graph file. The parity rule (§10 of the
+build plan, `CLAUDE.md`) applies here exactly as it
+does to the MCP/plugin pair: correctness fixes belong in the shared engine functions beneath all
+three surfaces, so the viewer can never drift into showing different numbers than the agents act
+on.

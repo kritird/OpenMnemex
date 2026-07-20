@@ -1,0 +1,109 @@
+/* OpenMnemex viewer — theme tokens (viewer plan §5).
+ *
+ * Semantics are fixed and must not be repurposed:
+ *   teal   = knowledge / promoted graph ("open")
+ *   purple = focus / selection / staging ("mnemex")
+ *   warm gray = structure (chrome, borders, text)
+ *   amber / red = RESERVED for freshness + health states only
+ *
+ * Light is the default; dark follows the OS unless the header toggle stored an
+ * explicit choice (html[data-theme]). Flat surfaces, 1px hairlines, no gradients. */
+
+:root {
+  color-scheme: light;
+
+  --bg: #fafaf9;            /* near-white, warm */
+  --bg-panel: #ffffff;
+  --bg-inset: #f5f5f4;      /* wells, hover fills */
+  --border: #e7e5e4;        /* 1px hairlines */
+  --border-strong: #d6d3d1;
+
+  --text: #1c1917;
+  --text-muted: #78716c;
+  --text-faint: #a8a29e;
+
+  --teal: #0d9488;          /* knowledge accent, AA on light surfaces */
+  --teal-soft: #ccfbf1;
+  --purple: #9333ea;        /* focus / staged */
+  --purple-soft: #f3e8ff;
+
+  --amber: #d97706;         /* reserved: freshness due-soon */
+  --red: #dc2626;           /* reserved: stale / health */
+
+  --canvas-node: #14b8a6;   /* fallback fill (nodes with no strength: stubs) */
+  --canvas-edge: #d6d3d1;
+  /* hotness fill ramp (encoding §4): teal-600 hot → pale teal cooling → warm gray cold */
+  --node-hot: #0d9488;
+  --node-cooling: #7edcd0;
+  --node-cold: #b5b0ab;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
+             "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow-pop: 0 8px 24px rgba(28, 25, 23, 0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #131211;
+    --bg-panel: #1a1918;
+    --bg-inset: #232120;
+    --border: #2a2827;
+    --border-strong: #3b3836;
+
+    --text: #e7e5e4;
+    --text-muted: #a8a29e;
+    --text-faint: #6f6a66;
+
+    --teal: #2dd4bf;        /* brand teal reads correctly on dark */
+    --teal-soft: #103f3a;
+    --purple: #c084fc;
+    --purple-soft: #3b2352;
+
+    --amber: #f59e0b;
+    --red: #f87171;
+
+    --canvas-node: #2dd4bf;
+    --canvas-edge: #3b3836;
+    --node-hot: #2dd4bf;
+    --node-cooling: #147c70;
+    --node-cold: #57534e;
+
+    --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #131211;
+  --bg-panel: #1a1918;
+  --bg-inset: #232120;
+  --border: #2a2827;
+  --border-strong: #3b3836;
+
+  --text: #e7e5e4;
+  --text-muted: #a8a29e;
+  --text-faint: #6f6a66;
+
+  --teal: #2dd4bf;
+  --teal-soft: #103f3a;
+  --purple: #c084fc;
+  --purple-soft: #3b2352;
+
+  --amber: #f59e0b;
+  --red: #f87171;
+
+  --canvas-node: #2dd4bf;
+  --canvas-edge: #3b3836;
+  --node-hot: #2dd4bf;
+  --node-cooling: #147c70;
+  --node-cold: #57534e;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+}

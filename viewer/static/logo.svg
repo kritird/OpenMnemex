@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24">
+  <title>OpenMnemex</title>
+  <desc>An open teal ring with a purple node docking into the gap.</desc>
+  <path d="M 16.9 4.9 A 8.6 8.6 0 1 0 20.6 11.9" fill="none" stroke="#2dd4bf" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="19.5" cy="7.5" r="3.2" fill="#a855f7"/>
+</svg>

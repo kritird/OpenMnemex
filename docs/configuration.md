@@ -61,6 +61,17 @@ not.
 all read it. Full spec (format, write triggers, the `present` flag): see the "Graph registry &
 discovery" section of [`binding-and-graph-sync.md`](binding-and-graph-sync.md).
 
+### The viewer (`openmnemex-serve`) and its knobs
+
+The view-only web viewer ([`viewer.md`](viewer.md)) needs the **`[viewer]` extra**
+(`pip install 'openmnemex[viewer]'` — FastAPI + uvicorn; without it the command exits with the
+install hint, same pattern as `[mcp]`). It takes three flags: `--port N` (default 8765,
+auto-increments when taken), `--no-open` (don't launch the browser), and `--graph PATH` (register
+a graph the discovery wouldn't find). Discovery itself has no config file: the viewer reads the
+**same `graphs.md` registry** above (one ledger for every surface), offers a bounded rescan of
+the mnemex home, and "Open a folder…" registers any path you point it at — registration is the
+only thing rescan ever writes.
+
 ---
 
 ## ⚙️ Schema and defaults

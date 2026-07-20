@@ -53,6 +53,9 @@ commit.
 # Any other agent (OpenCode / Gemini CLI / Codex / Copilot / Cursor) — one command,
 # creates a local-folder graph, binds it, and pins it into the MCP entry, zero prompts:
 uvx openmnemex install --agent <agent> --init-graph --yes
+
+# See the graph (local, view-only web app — opens your browser):
+uvx --from 'openmnemex[viewer]' openmnemex-serve
 ```
 
 Then just work: the first read on the empty graph offers to **seed it from a repo/docs** — or skip
@@ -279,6 +282,27 @@ flowchart LR
     class REG,STG,G store;
 ```
 
+### 👁️ See your graph — the view-only viewer
+
+Agents write the graph; the viewer lets **you** look at it. `openmnemex-serve` starts a local
+web app that draws every graph on your machine as a living picture — node **size and teal depth**
+show how heavily each atom is used, **amber/red rings** show what's due or overdue for a re-check,
+hollow purple dots are staged captures, dashed ghosts are `[[links]]` nobody has written yet.
+
+<p align="center">
+  <img src="assets/viewer-canvas.png" alt="The OpenMnemex viewer canvas" width="720">
+</p>
+
+```bash
+uvx --from 'openmnemex[viewer]' openmnemex-serve     # or: pip install 'openmnemex[viewer]'
+```
+
+Click any node for its mesh and full rendered atom; search the graph; open the **revalidation
+queue** (what needs re-checking, soonest first); toggle the **health overlay** (doctor findings
+pinned on the canvas); or drag the **time scrubber** to watch how the graph would age over the
+next months. Every number is computed by the same engine the agents use — and it's **view-only
+forever**: browsing never changes a file. Full tour: [`docs/viewer.md`](docs/viewer.md).
+
 Two further skills round out the surface. `/mnemex:mnx-init` is the setup/preflight: it **binds** a
 project (or your user account) to a graph repo — creating and scaffolding a new graph, or pointing at an
 existing one — and is what every other command resolves first. For a git-remote graph it runs a
@@ -387,6 +411,7 @@ is expanded on first use and collected in the appendix.
 | [`user-journey.md`](docs/user-journey.md) | 🧭 End-to-end journey: install → bind → daily read/capture/promote, with auto-hook touchpoints. |
 | [`multi-graph-and-team-routing.md`](docs/multi-graph-and-team-routing.md) | 🔗 Working across many graphs, teams & orgs: which-graph vs which-team, per-graph staging, worked example. |
 | [`freshness-and-revalidation.md`](docs/freshness-and-revalidation.md) | ⏳ The **freshness** axis: `verified` clock, `stale_after`, read-time refresh cue, `volatility`, timeless-never-dies. |
+| [`viewer.md`](docs/viewer.md) | 👁️ The **view-only web viewer** (`openmnemex-serve`): canvas encoding, revalidation queue, health overlay, time scrubber, URL scheme. |
 
 See also: [`FEATURES.md`](FEATURES.md) (feature showcase).
 

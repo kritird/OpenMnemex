@@ -314,6 +314,29 @@ stateDiagram-v2
 
 ---
 
+## 👁️ Stage seven-and-a-half — *You* look at what the agents built (the viewer)
+
+Everything above is the agents' loop. The viewer is **your** window into it — browse the graph
+without touching it, and garden it with informed eyes:
+
+```bash
+uvx --from 'openmnemex[viewer]' openmnemex-serve      # opens http://127.0.0.1:8765
+```
+
+**The browse journey** — pick a graph from the welcome screen (every graph on the machine is
+discovered automatically), then wander: the tree scopes the canvas to a team or cluster, node
+size/color shows what's hot, rings show what's going stale, clicking a node lights up its mesh,
+and the full atom opens with rendered markdown and clickable `[[wiki-links]]`. URLs are shareable
+— `?scope=` and `?sel=` restore the exact view.
+
+**The gardener journey** — open the **Queue** for "what needs re-checking, soonest first"; toggle
+**Health** to see doctor findings pinned where they live; drag the **Time** scrubber to preview
+which knowledge goes stale over the next quarter if nobody re-verifies it. Then act through the
+normal surfaces — `mnx-revalidate`, `mnx-doctor --fix`, a capture/promote — and refresh: the
+viewer never mutates anything itself ([`viewer.md`](viewer.md), `LIMITATIONS.md` #5).
+
+---
+
 ## 🔁 The full loop, on one page
 
 ```mermaid

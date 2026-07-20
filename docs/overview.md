@@ -90,6 +90,12 @@ in-session, because deciding what's worth remembering is irreducibly an LLM judg
 > backbone. The day-one graph and the hand-grown graph are the same shape — **no vectors, no server, no
 > global index, no RAG.**
 
+The same engine is reachable through **three surfaces**: the **Claude Code plugin** (the full
+experience — skills plus auto-capture hooks), the **MCP server** (the same loop for any other
+agent), and the **viewer** (`openmnemex-serve`) — a local, view-only web app where a *human*
+browses the graph the agents built: what's hot, what's going stale, how it connects. Agents
+write; the viewer only shows. See [`viewer.md`](viewer.md).
+
 Where a subsystem reads the same state it is mutating, consistency breaks subtly. The protocol
 forecloses that with one principle: **snapshot-then-apply** — compute every decision against a
 frozen view, then apply.

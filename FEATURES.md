@@ -63,6 +63,12 @@ mindmap
       🪝 Stop stamp-flush + nudge
       🛡️ PreToolUse commit gate
       🩺 Doctor invariants + self-heal
+    👁️ Viewer
+      🖼️ Local view-only web app
+      🌡️ Hotness × freshness canvas
+      ⏳ Revalidation queue
+      🩺 Health overlay
+      🕰️ Time scrubber
 ```
 
 ---
@@ -305,6 +311,29 @@ Plus the on-demand health tools:
 - 🩺 **`mnx-doctor`** — checks every invariant (edge targets exist, index matches nodes, denormalized copies
   fresh, reverse map consistent) and `--fix` regenerates derived files *from the nodes* (truth is never auto-edited).
 - 📊 **`mnx-status`** — what's bound, its kind, node/tier counts per team, pending stamps, last gc, health.
+
+---
+
+## 👁️ 8 — The viewer: see the memory the agents built
+
+Agents write the graph; **`openmnemex-serve`** lets you *look* at it — a local, **view-only** web
+app over the same engine (no separate database, no separate math):
+
+```bash
+uvx --from 'openmnemex[viewer]' openmnemex-serve
+```
+
+| ✅ Feature | 💬 What it means for you |
+|---|---|
+| 🌡️ **Hotness × freshness canvas** | Node size + teal depth = how heavily used; amber/red dashed rings = due/overdue for a re-check. A **hot-but-stale** atom (big node, red ring) is unmissable — exactly the fact most likely to be confidently wrong. |
+| 🔍 **Mesh, search, full atoms** | Click a node to light up its mesh; search the graph; open the fully rendered atom with clickable `[[wiki-links]]` — red-links show as ghosts ("not written yet, wanted by …"). |
+| ⏳ **Revalidation queue** | Every atom with a freshness horizon, soonest-stale first — your "what should I re-check today" list, one click from its place on the canvas. |
+| 🩺 **Health overlay** | Doctor findings pinned onto the affected nodes; fixing stays with `mnx-doctor --fix`. |
+| 🕰️ **Time scrubber** | Drag up to a year ahead and watch the *same* graph age in place — the server recomputes every number at the projected date; nothing is written. |
+| 🔌 **One-click agent connect** | The Connections screen detects the coding agents on your machine and wires any of them to Mnemex with one click — the same write the CLI installer does, no commands to paste. |
+| 🔒 **Knowledge stays view-only** | Browsing never changes a graph file. No edit buttons, no desktop app, no auth — local (`127.0.0.1`) and single-user by design (`LIMITATIONS.md` #5). |
+
+> 📖 The full tour: [`docs/viewer.md`](docs/viewer.md)
 
 ---
 

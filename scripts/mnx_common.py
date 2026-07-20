@@ -129,6 +129,13 @@ def opencode_plugin_dir():
     return _data_dir(("integrations", "opencode"), "openmnemex.data.integrations.opencode")
 
 
+def viewer_static_dir():
+    """``viewer/static/`` — the view-only web UI served by ``openmnemex-serve`` (viewer
+    plan V1.2). Checkout wins; a real pip/uvx install falls back to the copy bundled as
+    the ``openmnemex.data.viewer`` package data."""
+    return _data_dir(("viewer", "static"), "openmnemex.data.viewer")
+
+
 # --- time -------------------------------------------------------------------
 
 def now_utc() -> str:
