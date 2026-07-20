@@ -42,8 +42,8 @@ function renderHeader(route) {
 function render(route) {
   graphViewCleanup();
   renderHeader(route);
-  document.title = route.view === "connections" ? "Connections · OpenMnemex"
-    : route.slug ? `${route.slug} · OpenMnemex` : "OpenMnemex";
+  document.title = route.view === "connections" ? "Add agents · OpenMnemex Console"
+    : route.slug ? `${route.slug} · OpenMnemex Console` : "OpenMnemex Console";
   if (route.view === "graph") renderGraph(route);
   else if (route.view === "atom") renderAtom(route);
   else if (route.view === "config") renderConfig(route);

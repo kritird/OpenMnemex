@@ -1,5 +1,11 @@
 # Agent setup — quick start for every supported host
 
+> [!TIP]
+> The easiest path is the **OpenMnemex Console** (`uvx openmnemex`, [`console.md`](console.md)):
+> its **Add agents** screen detects your agents and connects each with one click — it drives the
+> exact same installer as every command on this page. This page is the CLI equivalent, for
+> scripts, CI, or terminal preference.
+
 Claude Code gets the full plugin experience (7 auto-hooks, skills, no MCP server required — see
 [`docs/user-journey.md`](user-journey.md) for that path). This page is for everyone else:
 **OpenCode, Gemini CLI, Codex CLI, GitHub Copilot (agent mode), and Cursor** — plus the MCP-only

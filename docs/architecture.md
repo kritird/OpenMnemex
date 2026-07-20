@@ -314,9 +314,9 @@ server, no global index, no read-time clustering** — a distilled graph, not a 
 
 ---
 
-## 1️⃣4️⃣ The viewer's serve layer — a read-only lens over the same engine
+## 1️⃣4️⃣ The Console's serve layer — a read-only lens over the same engine
 
-The viewer ([`viewer.md`](viewer.md)) adds no fourth kind of state and no second implementation of
+The Console ([`console.md`](console.md)) adds no fourth kind of state and no second implementation of
 the math. `mnx_serve.py` is a thin local HTTP layer that calls the **same shared `mnx_*` engine
 functions** every other surface uses — `mnx_decay` for strength, `mnx_config` for horizons and
 knobs, `mnx_doctor` for health, `mnx_binding`'s registry for discovery — and serializes their
@@ -331,5 +331,5 @@ folder, and the Connections screen's one-click agent connect — which writes an
 config via the shared `mnx_install` installer, never a graph file. The parity rule (§10 of the
 build plan, `CLAUDE.md`) applies here exactly as it
 does to the MCP/plugin pair: correctness fixes belong in the shared engine functions beneath all
-three surfaces, so the viewer can never drift into showing different numbers than the agents act
+three surfaces, so the Console can never drift into showing different numbers than the agents act
 on.

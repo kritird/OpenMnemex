@@ -672,19 +672,22 @@ def check_install(project_root: Path) -> dict[str, Any]:
 # --- cli -----------------------------------------------------------------------------
 
 def serve_viewer(argv: list[str]) -> int:
-    """``openmnemex serve …`` — delegate to the local view-only viewer (viewer plan V1.1,
-    journey J1: ``uvx openmnemex serve``). All flags pass through to mnx_serve."""
+    """``openmnemex console …`` / ``openmnemex serve …`` (and bare ``openmnemex`` /
+    ``uvx openmnemex``) — delegate to the OpenMnemex Console. All flags pass through
+    to mnx_serve."""
     import mnx_serve
     return mnx_serve._main(["mnx_serve.py", "serve", *argv])
 
 
 _USAGE = [
+    "mnx_install.py [console] [--port N] [--no-open] [--graph PATH]"
+    "  — run the OpenMnemex Console, the recommended starting point (the default when no"
+    "  subcommand is given: bare `openmnemex` / `uvx openmnemex` opens it; `serve` = alias)."
+    "  Add/connect agents from the Console's UI rather than the flags below.",
     "mnx_install.py install --agent {claude-code,opencode,gemini-cli,codex,copilot,cursor}"
     " [--project|--user] [--uninstall] [--check] [--dry-run] [--yes] [--pin-graph] [--init-graph]"
     "  — emit/remove the MCP entry + instruction-file block for one target agent"
     "  (--init-graph: create + bind a local-folder graph first, then pin it into the entry)",
-    "mnx_install.py serve [--port N] [--no-open] [--graph PATH]"
-    "  — run the local view-only viewer (needs the [viewer] extra; see mnx_serve.py)",
 ]
 _FLAGS = {"--agent": True, "--project": False, "--user": False, "--uninstall": False,
           "--check": False, "--dry-run": False, "--yes": False, "--pin-graph": False,
@@ -692,10 +695,15 @@ _FLAGS = {"--agent": True, "--project": False, "--user": False, "--uninstall": F
 
 
 def _main(argv: list[str]) -> int:
-    # `serve` delegates wholesale to mnx_serve BEFORE cli_guard: the viewer owns its own
-    # flag set (--port/--no-open/--graph), which this module has not declared.
-    if len(argv) > 1 and argv[1] == "serve":
+    # `console` (and its alias `serve`) delegates wholesale to mnx_serve BEFORE
+    # cli_guard: the Console owns its own flag set (--port/--no-open/--graph), which
+    # this module has not declared. Bare invocation (`uvx openmnemex`, no subcommand
+    # and no flags) is the journey's front door and opens the Console too;
+    # `openmnemex --help` still reaches cli_guard below.
+    if len(argv) > 1 and argv[1] in ("console", "serve"):
         return serve_viewer(argv[2:])
+    if len(argv) == 1:
+        return serve_viewer([])
     handled = mnx_common.cli_guard(argv, _USAGE, _FLAGS)
     if handled is not None:
         return handled

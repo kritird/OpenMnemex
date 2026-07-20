@@ -63,8 +63,8 @@ mindmap
       🪝 Stop stamp-flush + nudge
       🛡️ PreToolUse commit gate
       🩺 Doctor invariants + self-heal
-    👁️ Viewer
-      🖼️ Local view-only web app
+    🖥️ Console
+      🖼️ Local web app — the starting point
       🌡️ Hotness × freshness canvas
       ⏳ Revalidation queue
       🩺 Health overlay
@@ -314,13 +314,14 @@ Plus the on-demand health tools:
 
 ---
 
-## 👁️ 8 — The viewer: see the memory the agents built
+## 🖥️ 8 — The Console: your starting point, and the window into the memory
 
-Agents write the graph; **`openmnemex-serve`** lets you *look* at it — a local, **view-only** web
-app over the same engine (no separate database, no separate math):
+The **OpenMnemex Console** is where the journey begins — one command opens it, you add your
+agents from its UI, and it stays your view into the graph they build (same engine underneath,
+no separate database, no separate math):
 
 ```bash
-uvx --from 'openmnemex[viewer]' openmnemex-serve
+uvx openmnemex        # bare command = open the Console; also: openmnemex console
 ```
 
 | ✅ Feature | 💬 What it means for you |
@@ -330,10 +331,10 @@ uvx --from 'openmnemex[viewer]' openmnemex-serve
 | ⏳ **Revalidation queue** | Every atom with a freshness horizon, soonest-stale first — your "what should I re-check today" list, one click from its place on the canvas. |
 | 🩺 **Health overlay** | Doctor findings pinned onto the affected nodes; fixing stays with `mnx-doctor --fix`. |
 | 🕰️ **Time scrubber** | Drag up to a year ahead and watch the *same* graph age in place — the server recomputes every number at the projected date; nothing is written. |
-| 🔌 **One-click agent connect** | The Connections screen detects the coding agents on your machine and wires any of them to Mnemex with one click — the same write the CLI installer does, no commands to paste. |
+| 🔌 **Add agents, one click** | The Add agents screen detects the coding agents on your machine and wires any of them to Mnemex with one click — the same write the CLI installer does, no commands to paste. For Claude Code it recommends the richer plugin route and shows the exact commands. |
 | 🔒 **Knowledge stays view-only** | Browsing never changes a graph file. No edit buttons, no desktop app, no auth — local (`127.0.0.1`) and single-user by design (`LIMITATIONS.md` #5). |
 
-> 📖 The full tour: [`docs/viewer.md`](docs/viewer.md)
+> 📖 The full tour: [`docs/console.md`](docs/console.md)
 
 ---
 

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "openmnemex"
 # Single-sourced with .claude-plugin/plugin.json "version" — a test asserts they match
 # (tests/test_packaging_imports.py::test_pyproject_version_matches_plugin_manifest).
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenMnemex Context Graph — a self-pruning, human-memory-modeled knowledge context graph for AI agents. Markdown in git; no server, no database, no vector store."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,7 +37,11 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["pyyaml>=6.0"]
+# FastAPI + uvicorn are CORE, not an extra (Kriti decision 2026-07-20): the viewer is the
+# front door of the user journey, so `pip install openmnemex` / bare `uvx openmnemex` must
+# be enough to open it — no bracket incantation. mnx_serve.py still soft-imports them and
+# degrades to a hint rather than a stack trace if an env somehow lacks them.
+dependencies = ["pyyaml>=6.0", "fastapi>=0.110", "uvicorn>=0.23"]
 
 [project.optional-dependencies]
 # The MCP stdio server (multi-agent plan v2 §5, Phase 1). The official MCP SDK needs
@@ -45,23 +49,23 @@ dependencies = ["pyyaml>=6.0"]
 # module outside the future scripts/mnx_mcp.py may import it (guarded by
 # tests/test_packaging_imports.py::test_engine_never_imports_mcp_sdk).
 mcp = ["mcp>=1.2.0; python_version >= '3.10'"]
-# The local view-only web viewer (`mnx serve`, viewer plan V1.1). Same pattern as [mcp]:
-# core stays dependency-free; scripts/mnx_serve.py soft-imports these and the console
-# script exits 1 with the install hint when they are missing.
-viewer = ["fastapi>=0.110", "uvicorn>=0.23"]
+# Back-compat alias only: the viewer deps moved into core dependencies above, but
+# published docs/commands used `openmnemex[viewer]` — keep the name resolving.
+viewer = []
 
 [project.scripts]
 # The stdio MCP server (plan v2 Phase 1, commit 1a). Installed unconditionally but the
 # server itself needs the [mcp] extra — without it the binary exits 1 with the install
 # hint instead of a missing-command error.
 openmnemex-mcp = "openmnemex.mnx_mcp:main"
-# The per-agent installer (plan v2 §7 Phase 5, commit 5a). Needs no extras — it only
-# writes config files / shells out to each agent's own CLI. Also fronts the viewer:
-# `openmnemex serve` delegates to mnx_serve (viewer plan J1: `uvx openmnemex serve`).
+# The main command (plan v2 §7 Phase 5, commit 5a). Bare invocation opens the Console
+# (the journey's front door — Kriti decision 2026-07-20); `console`/`serve` do the same
+# explicitly and `install --agent …` is the scriptable per-agent installer the Console's
+# Connect button also drives.
 openmnemex = "openmnemex.mnx_install:main"
-# The local view-only viewer (viewer plan V1.1). Installed unconditionally but the server
-# needs the [viewer] extra — without it the binary exits 1 with the install hint.
-openmnemex-serve = "openmnemex.mnx_serve:main"
+# Explicit Console binary (renamed from openmnemex-serve pre-publication — the PyPI
+# 0.1.0 release predates the Console entirely, so nothing shipped under the old name).
+openmnemex-console = "openmnemex.mnx_serve:main"
 
 [project.urls]
 Homepage = "https://github.com/kritird/OpenMnemex"

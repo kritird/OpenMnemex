@@ -1,12 +1,16 @@
-"""mnx_serve.py — the OpenMnemex local viewer server (viewer plan V1.1).
+"""mnx_serve.py — the OpenMnemex CONSOLE server (user-facing name: "the Console";
+"viewer" survives only in internal identifiers — Kriti rename decision 2026-07-20).
 
-A permanently VIEW-ONLY web surface over any local graph: ``openmnemex-serve`` (or
-``uvx openmnemex serve``) starts a localhost HTTP server whose JSON API renders what the
-engine read paths already expose — tree, nodes+edges, node detail, search, health, the
-revalidation queue, effective config, and machine-level agent connection status. The SPA
-frontend (``viewer/static/``, no build step — plain ES modules + vendored Cytoscape) is
-served from ``/`` with ``/g/{graph}/…`` deep links and ``/static/*`` assets; the files
-resolve through ``mnx_common.viewer_static_dir()`` (checkout first, else the
+The Console is the FRONT DOOR of the user journey: bare ``uvx openmnemex`` (also
+``openmnemex console`` / ``openmnemex-console``; ``serve`` kept as an alias) starts a
+localhost HTTP server, and from its UI the user adds/installs agents (Claude Code →
+plugin route recommended; others → one-click MCP connect). Over graph knowledge it is
+permanently VIEW-ONLY: the JSON API renders what the engine read paths already expose —
+tree, nodes+edges, node detail, search, health, the revalidation queue, effective
+config, and machine-level agent connection status. The SPA frontend
+(``viewer/static/``, no build step — plain ES modules + vendored Cytoscape) is served
+from ``/`` with ``/g/{graph}/…`` deep links and ``/static/*`` assets; the files resolve
+through ``mnx_common.viewer_static_dir()`` (checkout first, else the
 ``openmnemex.data.viewer`` wheel copy).
 
 Write surface (the FULL list; base decision 2026-07-19, connect added 2026-07-20 —
@@ -37,10 +41,12 @@ All decay/freshness numbers are computed SERVER-SIDE by the engine (``mnx_decay`
 ``mnx_config.resolve_horizon``) — the single source of truth. ``?at=TIMESTAMP`` recomputes
 at a projected clock for the time scrubber; the frontend never reimplements λ math.
 
-FastAPI/uvicorn are an OPTIONAL extra (``pip install 'openmnemex[viewer]'``); this module
-must stay importable without them (the packaging bridge imports every engine module), so
-the web imports are soft and only ``create_app()``/``serve()`` require them. Payload
-builders are plain functions over the engine — importable and testable with no server.
+FastAPI/uvicorn ship as CORE dependencies of the package (Kriti decision 2026-07-20: the
+viewer is the journey's front door, so bare ``uvx openmnemex`` must be enough — the old
+``[viewer]`` extra survives only as an empty back-compat alias). This module still stays
+importable without them (the packaging bridge imports every engine module), so the web
+imports are soft and only ``create_app()``/``serve()`` require them. Payload builders are
+plain functions over the engine — importable and testable with no server.
 
 Server behavior: binds 127.0.0.1 ONLY (no remote access/auth by design), ``--port``
 (default 8765, auto-increment when taken), ``--no-open``, ``--graph PATH`` (register a
@@ -50,11 +56,13 @@ partially-written/unparseable files are skipped and reported under ``warnings`` 
 broken file must never 500 the whole view.
 
 CLI:
-    serve [--port N] [--no-open] [--graph PATH]  — run the viewer (default; blocks)
-    graphs                                       — the discovered-graphs payload as JSON
-    info                                         — identity + web-deps availability
+    console [--port N] [--no-open] [--graph PATH] — run the Console (default; blocks;
+                                                    `serve` is an accepted alias)
+    graphs                                        — the discovered-graphs payload as JSON
+    info                                          — identity + web-deps availability
 
-Dependencies: engine = Python 3.9+ stdlib + PyYAML; serving needs the [viewer] extra.
+Dependencies: engine = Python 3.9+ stdlib + PyYAML; serving needs FastAPI + uvicorn
+(core deps of the published package).
 """
 from __future__ import annotations
 
@@ -79,8 +87,9 @@ import mnx_lock
 import mnx_resolve
 import mnx_stage
 
-# Soft web imports: the engine (and the packaging bridge) must work without the
-# [viewer] extra. Only building/running the server needs FastAPI + uvicorn.
+# Soft web imports: FastAPI/uvicorn are core deps of the wheel, but the engine (and the
+# packaging bridge) must still import cleanly in an env without them — only
+# building/running the server actually needs them.
 try:
     import fastapi  # noqa: F401
     import uvicorn  # noqa: F401
@@ -94,7 +103,7 @@ except Exception as _exc:  # ImportError; anything else means a broken install
     Request = None  # type: ignore[assignment]
     _VIEWER_IMPORT_ERROR = _exc
 
-SERVER_NAME = "openmnemex-viewer"
+SERVER_NAME = "openmnemex-console"
 DEFAULT_PORT = 8765
 DUE_SOON_DAYS_DEFAULT = 7.0     # freshness ring turns amber this many days before stale
 _GHOST_PREFIX = "ghost:"        # synthetic ids for red-link ghost nodes (no atom behind them)
@@ -1075,9 +1084,9 @@ def fs_dirs_payload(path: Optional[str] = None) -> dict[str, Any]:
 # --- the FastAPI app -----------------------------------------------------------
 
 def _deps_missing_message() -> str:
-    return ("The OpenMnemex viewer needs FastAPI + uvicorn. Install the optional extra: "
-            "pip install 'openmnemex[viewer]'  (or run via: "
-            "uvx --from 'openmnemex[viewer]' openmnemex-serve). "
+    return ("The OpenMnemex Console needs FastAPI + uvicorn (normally installed with the "
+            "package). Fix with: pip install fastapi uvicorn  (or reinstall: "
+            "pip install --force-reinstall openmnemex, or just run: uvx openmnemex). "
             f"Import error: {_VIEWER_IMPORT_ERROR}")
 
 
@@ -1087,9 +1096,9 @@ def deps_available() -> bool:
 
 # Fallback landing when the SPA files are missing (broken/partial install): the API
 # still works, so say so instead of 404ing the root.
-_NO_FRONTEND = """<!doctype html><meta charset="utf-8"><title>OpenMnemex viewer</title>
+_NO_FRONTEND = """<!doctype html><meta charset="utf-8"><title>OpenMnemex Console</title>
 <body style="font-family:system-ui;max-width:44rem;margin:3rem auto;color:#222">
-<h1 style="font-family:monospace">OpenMnemex viewer</h1>
+<h1 style="font-family:monospace">OpenMnemex Console</h1>
 <p>The API is up, but the frontend files (viewer/static/) were not found in this
 install — reinstall the package, or run from a checkout.</p>
 <ul>
@@ -1122,7 +1131,7 @@ def index_html() -> Optional[str]:
 
 
 def create_app():
-    """Build the FastAPI app (requires the [viewer] extra). Read-only by construction:
+    """Build the FastAPI app (requires FastAPI + uvicorn). Read-only by construction:
     the only POSTs are create-graph, rescan, and agent connect (see module docstring)."""
     if not deps_available():
         raise RuntimeError(_deps_missing_message())
@@ -1280,12 +1289,12 @@ def serve(port: int = DEFAULT_PORT, open_browser: bool = True,
     try:
         port = _free_port(int(port))
     except ViewerError as exc:
-        print(f"openmnemex-serve: {exc}", file=sys.stderr)
+        print(f"openmnemex-console: {exc}", file=sys.stderr)
         return 1
     url = f"http://127.0.0.1:{port}/"
     cards = graphs_payload()
     names = ", ".join(c["name"] for c in cards["graphs"]) or "(none — welcome screen offers create)"
-    print(f"OpenMnemex viewer · {url} · pid {os.getpid()}")
+    print(f"OpenMnemex Console · {url} · pid {os.getpid()}")
     print(f"graphs: {names}")
     print("Ctrl+C to stop; nothing to clean up.")
     if open_browser:
@@ -1307,10 +1316,10 @@ def info() -> dict[str, Any]:
 # --- cli -------------------------------------------------------------------------
 
 _USAGE = [
-    "mnx_serve.py serve [--port N] [--no-open] [--graph PATH]  — run the local viewer "
-    "(127.0.0.1 only; default port 8765, auto-increment)",
-    "mnx_serve.py graphs                                       — discovered graphs as JSON",
-    "mnx_serve.py info                                         — identity + [viewer]-extra readiness",
+    "mnx_serve.py console [--port N] [--no-open] [--graph PATH]  — run the local Console "
+    "(127.0.0.1 only; default port 8765, auto-increment; `serve` = alias)",
+    "mnx_serve.py graphs                                         — discovered graphs as JSON",
+    "mnx_serve.py info                                           — identity + web-deps readiness",
 ]
 _CLI_FLAGS = {"--port": True, "--no-open": False, "--graph": True}
 
@@ -1329,7 +1338,7 @@ def _main(argv: list[str]) -> int:
         return handled
     cmd = argv[1] if len(argv) > 1 else "serve"
     try:
-        if cmd == "serve":
+        if cmd in ("serve", "console"):
             port = _flag(argv, "--port")
             return serve(port=int(port) if port else DEFAULT_PORT,
                          open_browser="--no-open" not in argv,

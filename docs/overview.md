@@ -92,9 +92,10 @@ in-session, because deciding what's worth remembering is irreducibly an LLM judg
 
 The same engine is reachable through **three surfaces**: the **Claude Code plugin** (the full
 experience — skills plus auto-capture hooks), the **MCP server** (the same loop for any other
-agent), and the **viewer** (`openmnemex-serve`) — a local, view-only web app where a *human*
-browses the graph the agents built: what's hot, what's going stale, how it connects. Agents
-write; the viewer only shows. See [`viewer.md`](viewer.md).
+agent), and the **Console** (`uvx openmnemex`) — a local web app that is the *human's* surface
+and the journey's starting point: open it, add/connect your agents from its UI, then browse the
+graph the agents built — what's hot, what's going stale, how it connects. Agents write; over
+knowledge the Console only shows. See [`console.md`](console.md).
 
 Where a subsystem reads the same state it is mutating, consistency breaks subtly. The protocol
 forecloses that with one principle: **snapshot-then-apply** — compute every decision against a

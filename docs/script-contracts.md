@@ -401,16 +401,17 @@ a failure.
 
 ---
 
-## 👁️ `mnx_serve.py` — the view-only viewer server (`openmnemex-serve`)
+## 🖥️ `mnx_serve.py` — the Console server (`openmnemex-console`, bare `openmnemex`)
 
-Backs the local web viewer ([`viewer.md`](viewer.md)). A FastAPI app over the shared engine —
+Backs the OpenMnemex Console ([`console.md`](console.md)). A FastAPI app over the shared engine —
 every number the UI shows (`strength_now`, `freshness_state`, `half_life_days`, the queue order)
 is computed here by the same `mnx_decay`/`mnx_config` code paths every other surface uses; the
 frontend (`viewer/static/`, plain ES modules, no build step) does **no relevance math of its own**.
 
 ```
-serve [--port N] [--no-open] [--graph PATH]     # console script: openmnemex-serve
-                                                # also fronted by: openmnemex serve
+console [--port N] [--no-open] [--graph PATH]   # binary: openmnemex-console; also bare
+                                                # `openmnemex` / `openmnemex console`
+                                                # (`serve` accepted as an alias)
 
 GET  /api/graphs                   # discovery: graphs.md registry + presence checks
 POST /api/graphs/rescan            # bounded home scan; {path} registers that folder. Registry-only write.
@@ -428,9 +429,10 @@ POST /api/agents/connect           # {agent} → mnx_install.install(agent, scop
 ```
 
 `?at=` (nodes / node / queue) recomputes everything as of a future timestamp — the time
-scrubber's contract. Needs the **`[viewer]` extra** (FastAPI + uvicorn); without it the console
-script exits 1 with the install hint (`pip install 'openmnemex[viewer]'`), mirroring the `[mcp]`
-pattern. **Invariants:** binds `127.0.0.1` only; strictly read-only over existing graphs (the
+scrubber's contract. FastAPI + uvicorn are **core dependencies** of the package (the `[viewer]`
+extra survives only as an empty back-compat alias); if an env somehow lacks them the console
+script still exits 1 with a repair hint instead of a stack trace. Bare `openmnemex` (no
+subcommand) launches the Console — the CLI's default action. **Invariants:** binds `127.0.0.1` only; strictly read-only over existing graphs (the
 only writes anywhere are graph *registration*, the empty-folder `mnx_init` scaffold, and the
 agent-config connect above — all through shared engine functions, none touching graph
 knowledge); errors follow the `{ok:false, error:{code,message,action}}` shape; static assets

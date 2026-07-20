@@ -44,24 +44,27 @@ commit.
 
 ### ⏱️ 60-second quickstart
 
+Everything starts at the **OpenMnemex Console** — a local web app that opens in your browser:
+
 ```bash
-# Claude Code (the full plugin experience — auto-capture hooks, skills):
-/plugin marketplace add kritird/OpenMnemex
+uvx openmnemex          # or: pip install openmnemex && openmnemex
+```
+
+From the Console: create (or open) a graph, then go to **Add agents** — it detects the coding
+agents on your machine and connects each with **one click**. For **Claude Code** the Console
+recommends the **plugin** route instead (richer: auto-capture hooks, the full skill set) and
+shows you the two commands to run inside Claude Code:
+
+```bash
+/plugin marketplace add kritird/OpenMnemex        # inside Claude Code
 /plugin install mnemex@mnemex-marketplace
-/mnemex:mnx-init          # scaffold or bind a graph (guided; a plain local folder by default)
-
-# Any other agent (OpenCode / Gemini CLI / Codex / Copilot / Cursor) — one command,
-# creates a local-folder graph, binds it, and pins it into the MCP entry, zero prompts:
-uvx openmnemex install --agent <agent> --init-graph --yes
-
-# See the graph (local, view-only web app — opens your browser):
-uvx --from 'openmnemex[viewer]' openmnemex-serve
 ```
 
 Then just work: the first read on the empty graph offers to **seed it from a repo/docs** — or skip
-that and it fills episodically as you go. Full detail: [Install](#-install) below,
-[`docs/agent-setup.md`](docs/agent-setup.md) per agent, [`docs/user-journey.md`](docs/user-journey.md)
-for the day-to-day loop.
+that and it fills episodically as you go. Prefer the terminal? Every step has a CLI equivalent
+(`openmnemex install --agent <agent> --init-graph --yes`) — see [Install](#-install) below and
+[`docs/agent-setup.md`](docs/agent-setup.md); [`docs/user-journey.md`](docs/user-journey.md) has
+the day-to-day loop.
 
 ---
 
@@ -282,26 +285,30 @@ flowchart LR
     class REG,STG,G store;
 ```
 
-### 👁️ See your graph — the view-only viewer
+### 🖥️ The Console — where you meet your graph
 
-Agents write the graph; the viewer lets **you** look at it. `openmnemex-serve` starts a local
-web app that draws every graph on your machine as a living picture — node **size and teal depth**
-show how heavily each atom is used, **amber/red rings** show what's due or overdue for a re-check,
-hollow purple dots are staged captures, dashed ghosts are `[[links]]` nobody has written yet.
+The **OpenMnemex Console** is the human side of Mnemex: agents write the graph, the Console is
+where *you* start, look, and manage. One command opens it; from there you create or open graphs
+and hook up your agents (the **Add agents** screen) — and it draws every graph on your machine as
+a living picture: node **size and teal depth** show how heavily each atom is used, **amber/red
+rings** show what's due or overdue for a re-check, hollow purple dots are staged captures, dashed
+ghosts are `[[links]]` nobody has written yet.
 
 <p align="center">
-  <img src="assets/viewer-canvas.png" alt="The OpenMnemex viewer canvas" width="720">
+  <img src="assets/viewer-canvas.png" alt="The OpenMnemex Console canvas" width="720">
 </p>
 
 ```bash
-uvx --from 'openmnemex[viewer]' openmnemex-serve     # or: pip install 'openmnemex[viewer]'
+uvx openmnemex     # or: pip install openmnemex && openmnemex
 ```
 
 Click any node for its mesh and full rendered atom; search the graph; open the **revalidation
 queue** (what needs re-checking, soonest first); toggle the **health overlay** (doctor findings
 pinned on the canvas); or drag the **time scrubber** to watch how the graph would age over the
-next months. Every number is computed by the same engine the agents use — and it's **view-only
-forever**: browsing never changes a file. Full tour: [`docs/viewer.md`](docs/viewer.md).
+next months. Every number is computed by the same engine the agents use — and over knowledge it's
+**view-only forever**: browsing never changes a file (the Console's only writes are creating a
+new empty graph and, on your click, an agent's own connection config). Full tour:
+[`docs/console.md`](docs/console.md).
 
 Two further skills round out the surface. `/mnemex:mnx-init` is the setup/preflight: it **binds** a
 project (or your user account) to a graph repo — creating and scaffolding a new graph, or pointing at an
@@ -319,33 +326,37 @@ Phase-by-phase breakdowns are in
 
 ## 📦 Install
 
-```bash
-# 1. Install the one runtime dependency (Python standard library covers everything else):
-pip install pyyaml
+**Start with the Console** — it guides everything else:
 
-# 2. In Claude Code, add this repo as a marketplace, then install the plugin:
+```bash
+# 1. Open the OpenMnemex Console (installs on first run; needs Python 3.9+):
+uvx openmnemex                      # or: pip install openmnemex && openmnemex
+
+# 2. In the Console: create your first graph (or open an existing folder).
+
+# 3. In the Console → "Add agents": one click connects each detected agent.
+#    For Claude Code it recommends the plugin (auto-capture hooks, skills) and
+#    shows these two commands to run inside Claude Code:
 /plugin marketplace add kritird/OpenMnemex
 /plugin install mnemex@mnemex-marketplace
-
-# 3. Scaffold or bind a knowledge repo (the binding step every other command resolves):
-/mnemex:mnx-init
 ```
 
 > [!TIP]
-> Requirements: Claude Code and Python 3.9+. The only third-party Python package is
-> [`PyYAML`](https://pypi.org/project/PyYAML/) (`pip install pyyaml`); everything else is the
-> standard library. If `PyYAML` is missing, the Mnemex commands report it and tell you to install it
-> rather than failing cryptically.
+> Requirements: Python 3.9+. `pip install openmnemex` brings everything the Console and engine
+> need ([`PyYAML`](https://pypi.org/project/PyYAML/) plus FastAPI/uvicorn for the Console — the
+> engine itself runs on the standard library + PyYAML alone). If something is missing, the Mnemex
+> commands report it and tell you what to install rather than failing cryptically.
 
 A complete walkthrough — from install to daily usage, with the hooks that fire automatically — is in
 [`docs/user-journey.md`](docs/user-journey.md). 🧭
 
-### Other agents
+### The CLI equivalents (scripts, CI, or terminal preference)
 
-Claude Code gets the full plugin experience above (auto-capture hooks, skills). Every other MCP-capable
-agent gets the same read/capture/promote loop over the stdio MCP server, wired up with one command.
-For step-by-step, per-agent instructions (install → what changed → how to verify → which tier to
-expect), see [`docs/agent-setup.md`](docs/agent-setup.md).
+Everything the Console's Add agents screen does is also one command — it drives the exact same
+installer. Claude Code gets the full plugin experience above; every other MCP-capable agent gets
+the same read/capture/promote loop over the stdio MCP server. For step-by-step, per-agent
+instructions (install → what changed → how to verify → which tier to expect), see
+[`docs/agent-setup.md`](docs/agent-setup.md).
 
 ```bash
 # 60-second start: create a local-folder graph, bind it, and pin it into the entry — zero prompts.
@@ -378,12 +389,13 @@ add `--dry-run` to preview the diff or `--check` to verify an existing install; 
 exactly the Mnemex entry/block and leaves everything else in the file untouched.
 
 > [!NOTE]
-> Not on PyPI yet — until then, `uvx --from git+https://github.com/kritird/OpenMnemex openmnemex
-> install --agent <agent> ...` runs it straight from this repo.
+> [`openmnemex` is on PyPI](https://pypi.org/project/openmnemex/) — `uvx openmnemex` and
+> `pip install openmnemex` just work. To run the bleeding edge straight from this repo instead:
+> `uvx --from git+https://github.com/kritird/OpenMnemex openmnemex`.
 
 JS-native users can skip `uv`/`pip` entirely once published: `npx openmnemex install --agent
 <agent> ...` and `npx openmnemex-mcp` are thin shims that exec the same PyPI package underneath
-(`integrations/npm/`, not yet published — same not-on-PyPI caveat above applies).
+(`integrations/npm/`, the npm side is not yet published).
 
 ---
 
@@ -411,7 +423,7 @@ is expanded on first use and collected in the appendix.
 | [`user-journey.md`](docs/user-journey.md) | 🧭 End-to-end journey: install → bind → daily read/capture/promote, with auto-hook touchpoints. |
 | [`multi-graph-and-team-routing.md`](docs/multi-graph-and-team-routing.md) | 🔗 Working across many graphs, teams & orgs: which-graph vs which-team, per-graph staging, worked example. |
 | [`freshness-and-revalidation.md`](docs/freshness-and-revalidation.md) | ⏳ The **freshness** axis: `verified` clock, `stale_after`, read-time refresh cue, `volatility`, timeless-never-dies. |
-| [`viewer.md`](docs/viewer.md) | 👁️ The **view-only web viewer** (`openmnemex-serve`): canvas encoding, revalidation queue, health overlay, time scrubber, URL scheme. |
+| [`console.md`](docs/console.md) | 🖥️ The **OpenMnemex Console** (`uvx openmnemex`): the starting point — add agents, canvas encoding, revalidation queue, health overlay, time scrubber. |
 
 See also: [`FEATURES.md`](FEATURES.md) (feature showcase).
 

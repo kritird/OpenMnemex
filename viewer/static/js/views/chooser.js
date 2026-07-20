@@ -235,7 +235,7 @@ export async function renderChooser() {
         payload.empty
           ? "A graph is a folder of markdown atoms — plain files, in git."
           : `${payload.count} graph${payload.count === 1 ? "" : "s"} on this machine. `
-            + "The viewer is read-only: browsing never changes a file."),
+            + "The Console is read-only over knowledge: browsing never changes a file."),
       el("div.actions", {},
         el("button.btn", { onclick: openFolderDialog }, "Open a folder…"),
         rescanBtn,
@@ -243,6 +243,6 @@ export async function renderChooser() {
           ? null
           : el("button.btn.btn-ghost", { onclick: createGraphDialog }, "New graph…"),
         el("button.btn.btn-ghost", { onclick: () => navigate(connectionsUrl()) },
-          "Agent connections")),
+          "Add agents")),
       body)));
 }

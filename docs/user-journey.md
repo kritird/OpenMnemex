@@ -18,7 +18,7 @@
 journey
     title A day in the life of a Mnemex user
     section Setup (once)
-      Install plugin + PyYAML: 4: You
+      Open the Console, add agents: 5: You
       mnx-init binds a graph: 5: You, Skill
     section Session start (auto)
       Hook syncs graph to HEAD: 5: Hook
@@ -37,33 +37,40 @@ journey
 
 ---
 
-## 1️⃣ Stage one — Installation (once per machine)
+## 1️⃣ Stage one — Installation (once per machine): start at the Console
+
+The journey starts with the **OpenMnemex Console** ([`console.md`](console.md)) — one command,
+opens in your browser, and guides everything that follows:
 
 ```mermaid
 flowchart LR
-    A[💻 pip install pyyaml] --> B[🧩 /plugin marketplace add<br/>kritird/OpenMnemex]
-    B --> C[⬇️ /plugin install<br/>mnemex@mnemex-marketplace]
-    C --> D[✅ skills + commands + hooks<br/>registered in Claude Code]
+    A[💻 uvx openmnemex<br/>Console opens] --> B[🗂️ Create your<br/>first graph]
+    B --> C[🔌 Add agents screen:<br/>one-click Connect]
+    C --> D{Claude Code?}
+    D -->|yes| E[🧩 plugin recommended:<br/>/plugin install inside Claude]
+    D -->|other agents| F[✅ MCP entry written<br/>on click]
     classDef step fill:#14507a,stroke:#39c,color:#fff;
     classDef done fill:#0e7a0d,stroke:#0a5,color:#fff;
-    class A,B,C step;
-    class D done;
+    class A,B,C,D step;
+    class E,F done;
 ```
 
 ```bash
-# 1. The one runtime dependency (everything else is the Python standard library):
-pip install pyyaml
+# 1. Open the Console (installs on first run; Python 3.9+):
+uvx openmnemex                        # or: pip install openmnemex && openmnemex
 
-# 2. Add the marketplace and install the plugin inside Claude Code:
+# 2. In the Console: create your first graph, then "Add agents" — one click per agent.
+#    For Claude Code the Console recommends the plugin and shows these to run inside it:
 /plugin marketplace add kritird/OpenMnemex
 /plugin install mnemex@mnemex-marketplace
 ```
 
 | Touchpoint | Kind | What happens |
 |---|---|---|
-| `pip install pyyaml` | 🧑‍💻 shell | The only third-party Python package; everything else is stdlib. |
-| `/plugin marketplace add …` | 🟣 command | Registers this repo as a plugin marketplace. |
-| `/plugin install mnemex@…` | 🟣 command | Installs the skills, slash commands, and hooks. |
+| `uvx openmnemex` | 🧑‍💻 shell | Installs (first run) and opens the Console — the front door. |
+| Console → *Create your first graph* | 🖥️ Console | Scaffolds a doctor-clean graph in a fresh folder (same `mnx_init` engine as every surface). |
+| Console → *Add agents* → **Connect** | 🖥️ Console | Writes the agent's machine-level MCP entry — the same thing `openmnemex install --agent <a> --user` does. |
+| `/plugin marketplace add …` + `/plugin install mnemex@…` | 🟣 command | The recommended Claude Code path (richer: skills, commands, 7 auto-hooks) — run inside Claude Code; the Console shows these exact commands. |
 
 > [!NOTE]
 > The **skills** and **commands** are live immediately after install. The **hooks** (`hooks/hooks.json`)
@@ -314,13 +321,13 @@ stateDiagram-v2
 
 ---
 
-## 👁️ Stage seven-and-a-half — *You* look at what the agents built (the viewer)
+## 🖥️ Stage seven-and-a-half — *You* look at what the agents built (back in the Console)
 
-Everything above is the agents' loop. The viewer is **your** window into it — browse the graph
-without touching it, and garden it with informed eyes:
+Everything above is the agents' loop. The Console you started the journey in is also **your**
+window into it — browse the graph without touching it, and garden it with informed eyes:
 
 ```bash
-uvx --from 'openmnemex[viewer]' openmnemex-serve      # opens http://127.0.0.1:8765
+uvx openmnemex        # opens http://127.0.0.1:8765 (bare command = the Console)
 ```
 
 **The browse journey** — pick a graph from the welcome screen (every graph on the machine is
@@ -332,8 +339,8 @@ and the full atom opens with rendered markdown and clickable `[[wiki-links]]`. U
 **The gardener journey** — open the **Queue** for "what needs re-checking, soonest first"; toggle
 **Health** to see doctor findings pinned where they live; drag the **Time** scrubber to preview
 which knowledge goes stale over the next quarter if nobody re-verifies it. Then act through the
-normal surfaces — `mnx-revalidate`, `mnx-doctor --fix`, a capture/promote — and refresh: the
-viewer never mutates anything itself ([`viewer.md`](viewer.md), `LIMITATIONS.md` #5).
+normal surfaces — `mnx-revalidate`, `mnx-doctor --fix`, a capture/promote — and refresh: over
+knowledge the Console never mutates anything ([`console.md`](console.md), `LIMITATIONS.md` #5).
 
 ---
 
