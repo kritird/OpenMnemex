@@ -30,6 +30,37 @@ _PRIME = (1 << 61) - 1
 _MASK32 = (1 << 32) - 1
 DEAD = "dead"
 
+# LSH banding: split the num_perm-slot MinHash signature into bands of ROWS_PER_BAND
+# rows each; two items are candidate near-dups iff they collide in at least one band.
+# With num_perm=64 and rows=2 → 32 bands → the S-curve knee ((1/b)^(1/r)) sits at
+# ~0.18, comfortably below the pairs() / ER `possible` thresholds, so genuine
+# near-duplicates (Jaccard well above the knee) are retained with ~100% recall while
+# the all-pairs comparison collapses to within-bucket only. Recall floor for named
+# entities is the deterministic alias==id union in mnx_er (banding-independent).
+ROWS_PER_BAND = 2
+
+
+def _add_to_bands(bands: dict[tuple[int, tuple[int, ...]], set[str]], iid: str,
+                  sig: list[int], rows: int = ROWS_PER_BAND) -> None:
+    """Bucket `iid` by each band of its signature. Band index is part of the key so a
+    slice value in band 0 never collides with the same value in band 1."""
+    for bi in range(len(sig) // rows):
+        chunk = tuple(sig[bi * rows:(bi + 1) * rows])
+        bands.setdefault((bi, chunk), set()).add(iid)
+
+
+def _band_pairs(bands: dict[tuple[int, tuple[int, ...]], set[str]]) -> set[tuple[str, str]]:
+    """Candidate (sorted) id pairs: every within-bucket pair, deduped across bands."""
+    cand: set[tuple[str, str]] = set()
+    for members in bands.values():
+        if len(members) < 2:
+            continue
+        ml = sorted(members)
+        for i in range(len(ml)):
+            for j in range(i + 1, len(ml)):
+                cand.add((ml[i], ml[j]))
+    return cand
+
 
 def _h32(s: str) -> int:
     return int(hashlib.sha1(s.encode("utf-8")).hexdigest()[:8], 16)
@@ -80,9 +111,15 @@ def _surface(node: dict[str, Any]) -> str:
 
 
 def build(scope: str, num_perm: int = 64) -> dict[str, Any]:
-    """Index every active node under scope: {id: {sig, cluster, summary, aliases}} + LSH bands."""
+    """Index every active node under scope: {id: {sig, cluster, summary, aliases}} + LSH bands.
+
+    `bands` maps a band-key (band index, signature slice) → the set of ids that hash into
+    that bucket. Candidate near-duplicate pairs are drawn from within buckets only, so the
+    downstream comparison is sub-quadratic on a graph where most pairs are dissimilar
+    (was all-pairs O(n²) on every call, driven by graph size — docs/ingest-quality-fixes-plan §1)."""
     perms = _perms(num_perm)
     items: dict[str, Any] = {}
+    bands: dict[tuple[int, tuple[int, ...]], set[str]] = {}
     for cluster in mnx_common.iter_clusters(scope):
         cl = str(Path(cluster).resolve())
         for nf in mnx_common.iter_node_files(cluster):
@@ -93,11 +130,13 @@ def build(scope: str, num_perm: int = 64) -> dict[str, Any]:
             nid = node.get("id")
             if not nid or node.get("status") == DEAD:
                 continue
-            items[nid] = {"sig": minhash(tokens(_surface(node)), perms),
+            sig = minhash(tokens(_surface(node)), perms)
+            items[nid] = {"sig": sig,
                           "cluster": cl,
                           "summary": str(node.get("summary", "")),
                           "aliases": mnx_common.aliases_to_index(node.get("aliases"))}
-    return {"perms": perms, "items": items, "num_perm": num_perm}
+            _add_to_bands(bands, nid, sig)
+    return {"perms": perms, "items": items, "num_perm": num_perm, "bands": bands}
 
 
 def query(text: str, scope: str, threshold: float = 0.4, k: int = 5,
@@ -120,14 +159,17 @@ def _inject_staged(idx: dict[str, Any], atoms: list[dict[str, Any]]) -> None:
     """Add staged atoms ({id, summary, aliases}, cluster=None) into an already-built index so
     blocking covers staged↔graph and staged↔staged pairs (the ER blocker, corpus-ingestion §9)."""
     perms = idx["perms"]
+    bands = idx.setdefault("bands", {})
     for a in atoms or []:
         aid = a.get("id") or a.get("provisional_id")
         if not aid:
             continue
         surface = f"{a.get('summary', '')} {mnx_common.aliases_to_index(a.get('aliases'))}"
-        idx["items"][aid] = {"sig": minhash(tokens(surface), perms), "cluster": None,
+        sig = minhash(tokens(surface), perms)
+        idx["items"][aid] = {"sig": sig, "cluster": None,
                              "summary": str(a.get("summary", "")),
                              "aliases": mnx_common.aliases_to_index(a.get("aliases"))}
+        _add_to_bands(bands, aid, sig)
 
 
 def pairs(scope: str, threshold: float = 0.5, num_perm: int = 64,
@@ -139,18 +181,20 @@ def pairs(scope: str, threshold: float = 0.5, num_perm: int = 64,
     duplicates surface (needed for DP5 — collapse before staging)."""
     idx = build(scope, num_perm)
     _inject_staged(idx, with_atoms)
-    ids = list(idx["items"])
+    items = idx["items"]
     out = []
-    for i in range(len(ids)):
-        for j in range(i + 1, len(ids)):
-            a, b = idx["items"][ids[i]], idx["items"][ids[j]]
-            if a["cluster"] == b["cluster"] and not intra:
-                continue
-            est = jaccard(a["sig"], b["sig"])
-            if est >= threshold:
-                out.append({"a": ids[i], "b": ids[j], "similarity": round(est, 3),
-                            "a_cluster": a["cluster"], "b_cluster": b["cluster"]})
-    out.sort(key=lambda p: -p["similarity"])
+    # LSH blocking: only score pairs that share at least one band bucket, instead of the
+    # full O(n²) nested loop over the whole (graph ∪ staged) item set. The weighted score
+    # (here the estimated Jaccard) remains the real gate on the surviving candidates.
+    for a_id, b_id in _band_pairs(idx["bands"]):
+        a, b = items[a_id], items[b_id]
+        if a["cluster"] == b["cluster"] and not intra:
+            continue
+        est = jaccard(a["sig"], b["sig"])
+        if est >= threshold:
+            out.append({"a": a_id, "b": b_id, "similarity": round(est, 3),
+                        "a_cluster": a["cluster"], "b_cluster": b["cluster"]})
+    out.sort(key=lambda p: (-p["similarity"], p["a"], p["b"]))
     return {"threshold": threshold, "candidate_pairs": out,
             "note": "possible near-duplicates — info-level worklist (S2) / ER blocker candidates; never an auto-edit"}
 

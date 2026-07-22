@@ -31,7 +31,12 @@ import mnx_simindex
 
 MATCH_DEFAULT = 0.85
 POSSIBLE_DEFAULT = 0.60
-BLOCK_THRESHOLD = 0.20   # low → the blocker over-generates candidates; the weighted score filters
+# The LSH blocker (mnx_simindex.pairs, banded) generates candidates; the weighted score below is
+# the real gate. This threshold only trims blocker noise — kept LOW (below the ~0.18 banding knee,
+# with headroom for MinHash's downward estimation variance) so a genuine near-dup whose surface
+# Jaccard is under-estimated is not dropped before it can be weighted-scored. Was 0.20, which the
+# old exhaustive widening loop masked; with the widening gone, 0.20 silently dropped mid-band pairs.
+BLOCK_THRESHOLD = 0.10
 
 # Feature weights (docs/corpus-ingestion.md §9 / plan §2.5.5).
 W_ALIAS, W_SUMMARY, W_DOMAIN, W_LINK = 0.4, 0.3, 0.2, 0.1
@@ -143,14 +148,13 @@ def resolve(graph: str, atoms: list[dict[str, Any]], team: Optional[str] = None,
         staged_ids.append(it["id"])
 
     # BLOCK — reuse the simindex blocker over {graph ∪ staged}, intra so intra-batch dups surface.
+    # The blocker is now LSH-banded (docs/ingest-quality-fixes-plan §1): candidate generation is
+    # sub-quadratic in graph size, not the old O(batch × graph) widening. BLOCK_THRESHOLD is kept
+    # low so the blocker over-generates; the weighted score below is the real gate. Named-entity
+    # recall the banded blocker can miss (alias-subset dups whose surface Jaccard is diluted) is
+    # covered by the deterministic alias==id union pass below — the banding-independent recall floor.
     blocked = mnx_simindex.pairs(graph, threshold=BLOCK_THRESHOLD, with_atoms=atoms, intra=True)
     cand = {(p["a"], p["b"]) for p in blocked["candidate_pairs"]}
-    # Also consider every staged↔staged and staged↔graph pair directly (the blocker is recall-bounded;
-    # the weighted score is the real gate, so widen candidates cheaply for the small delta batch).
-    for i, sid in enumerate(staged_ids):
-        for other in list(items):
-            if other != sid:
-                cand.add(tuple(sorted((sid, other))))
 
     # SCORE + split
     uf = _UF()
