@@ -120,24 +120,80 @@ def classify(rel_path: str) -> str:
 
 _H_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _PY_DEF_RE = re.compile(r"^(?:async\s+)?(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)")
+
+# Keyword-declared exports (TS/JS/Go/Java/Rust/…). `export`/`default`/`public`/`async` are all
+# optional, so a plain top-level `function Foo()` / `class Bar` is still a unit; the `default`
+# slot lets `export default function Root()` and `export default class App` through — both were
+# silently dropped before (ingest quality finding #2).
 _EXPORT_SYM_RE = re.compile(
-    r"^\s*(?:export\s+)?(?:public\s+)?(?:async\s+)?"
+    r"^\s*(?:export\s+)?(?:default\s+)?(?:public\s+)?(?:async\s+)?"
     r"(?:func|function|class|interface|type|def|struct|enum)\s+([A-Za-z_][A-Za-z0-9_]*)")
+# Go method with a receiver: `func (r *Ledger) Post()` — the name follows the receiver, not `func`.
+_GO_METHOD_RE = re.compile(r"^\s*func\s+\([^)]*\)\s+([A-Za-z_][A-Za-z0-9_]*)")
+# Value-bound exports: `export const makePayment = (a) => {}` / `= function` / `= async function`.
+# Grp 1 = name, grp 2 = right-hand side; only a function-valued RHS becomes a unit (see
+# _is_func_rhs) so data constants like `export const CONFIG = {...}` are NOT unit-ified.
+_EXPORT_VALUE_RE = re.compile(
+    r"^\s*export\s+(?:default\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\b[^=\n]*=\s*(.*)$")
+# Bare default re-export of an identifier: `export default Root;`
+_EXPORT_DEFAULT_ID_RE = re.compile(r"^\s*export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$")
+_FUNC_RHS_RE = re.compile(r"^(?:async\s+)?function\b")
+
 _PROTO_MSG_RE = re.compile(r"^\s*(?:message|service|enum)\s+([A-Za-z_][A-Za-z0-9_]*)")
 _GRAPHQL_RE = re.compile(r"^\s*(?:type|input|enum|interface)\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
+def _is_func_rhs(rhs: str) -> bool:
+    """True when an `export const NAME = <rhs>` right-hand side is a function value (arrow or
+    `function`), not a plain data constant — the value-gate that keeps config blobs from becoming
+    interface units."""
+    rhs = rhs.strip()
+    return "=>" in rhs or bool(_FUNC_RHS_RE.match(rhs))
+
+
+def _export_symbol(line: str) -> Optional[str]:
+    """The exported/top-level symbol a code line declares, across every supported form (keyword
+    decl, Go receiver method, function-valued `export const`, bare `export default X`), else None.
+    Kept in one place so chunking and symbol-block boundary detection agree on what a symbol is."""
+    m = _EXPORT_SYM_RE.match(line)
+    if m:
+        return m.group(1)
+    m = _GO_METHOD_RE.match(line)
+    if m:
+        return m.group(1)
+    m = _EXPORT_VALUE_RE.match(line)
+    if m and _is_func_rhs(m.group(2)):
+        return m.group(1)
+    m = _EXPORT_DEFAULT_ID_RE.match(line)
+    if m:
+        return m.group(1)
+    return None
+
+
 def _doc_units(rel_path: str, text: str) -> list[dict[str, Any]]:
-    """Split a doc along h2 headings; a file with no h2 stays one whole unit (never truncated)."""
+    """Split a doc along its shallowest structural heading level; a file with no heading stays one
+    whole unit (never truncated).
+
+    "Shallowest structural level" = the minimum heading depth present, except a lone top-of-file
+    title (one heading at the shallowest depth, with deeper headings beneath it) is treated as a
+    title and folded into the preamble so we split on the real section level under it. This makes
+    an h1+h3 doc (no h2) yield one unit per h3 section instead of collapsing to a single unit —
+    which also unblocks the glean coverage loop that keys on per-section anchors (ingest quality
+    finding #5). Hardcoding h2 previously went blind on any doc that skipped h2."""
     lines = text.splitlines(keepends=True)
-    # find h2 boundaries
-    idxs = [i for i, ln in enumerate(lines) if re.match(r"^##\s+", ln)]
-    units: list[dict[str, Any]] = []
-    if not idxs:
+    headings: list[tuple[int, int, str]] = []   # (line_index, level, heading_text)
+    for i, ln in enumerate(lines):
+        m = _H_RE.match(ln)
+        if m:
+            headings.append((i, len(m.group(1)), m.group(2).strip()))
+    if not headings:
         anchor = _doc_title(text) or rel_path
-        units.append(_mk_unit(rel_path, "doc", anchor, text))
-        return units
-    # preamble before first h2 (only if it has non-blank content)
+        return [_mk_unit(rel_path, "doc", anchor, text)]
+    split_level = _split_level(headings)
+    idxs = [i for (i, lvl, _t) in headings if lvl == split_level]
+    heading_at = {i: (lvl, t) for (i, lvl, t) in headings}
+    units: list[dict[str, Any]] = []
+    # preamble before the first split boundary (title + intro), only if it has non-blank content
     if idxs[0] > 0:
         pre = "".join(lines[: idxs[0]])
         if pre.strip():
@@ -146,10 +202,26 @@ def _doc_units(rel_path: str, text: str) -> list[dict[str, Any]]:
     bounds = idxs + [len(lines)]
     for k in range(len(idxs)):
         seg = "".join(lines[bounds[k]: bounds[k + 1]])
-        m = re.match(r"^##\s+(.+?)\s*$", lines[idxs[k]])
-        anchor = "## " + (m.group(1).strip() if m else f"section-{k}")
+        lvl, t = heading_at[idxs[k]]
+        anchor = ("#" * lvl) + " " + (t or f"section-{k}")
         units.append(_mk_unit(rel_path, "doc", anchor, seg))
     return units
+
+
+def _split_level(headings: list[tuple[int, int, str]]) -> int:
+    """The heading depth to split a doc on: the shallowest level present, but descend past a lone
+    leading title (a single shallowest-level heading with deeper headings after it) so the real
+    sections under a document title become the units rather than the title swallowing them all."""
+    active = list(headings)
+    while active:
+        min_lvl = min(lvl for (_i, lvl, _t) in active)
+        at_min = [h for h in active if h[1] == min_lvl]
+        has_deeper = any(lvl > min_lvl for (_i, lvl, _t) in active)
+        if len(at_min) == 1 and active[0][1] == min_lvl and has_deeper:
+            active = active[1:]   # lone leading title → fold into preamble, split one level down
+            continue
+        return min_lvl
+    return headings[0][1]
 
 
 def _doc_title(text: str) -> Optional[str]:
@@ -174,29 +246,21 @@ def _code_units(rel_path: str, text: str) -> list[dict[str, Any]]:
     if header:
         units.append(_mk_unit(rel_path, "code-doc", f"module:{stem}", header))
 
-    # exported symbols → interface
-    if ext == ".proto":
-        sym_re = _PROTO_MSG_RE
-    elif ext in (".graphql", ".gql"):
-        sym_re = _GRAPHQL_RE
-    elif ext == ".py":
-        sym_re = None  # handled specially (public = no leading underscore)
-    else:
-        sym_re = _EXPORT_SYM_RE
-
+    # exported symbols → interface. Schema/GraphQL/Python each have one declaration regex; every
+    # other supported language routes through _export_symbol (all the export/method/value forms).
+    single_re = {".proto": _PROTO_MSG_RE, ".graphql": _GRAPHQL_RE, ".gql": _GRAPHQL_RE,
+                 ".py": _PY_DEF_RE}.get(ext)
     lines = text.splitlines()
-    if ext == ".py":
-        for i, ln in enumerate(lines):
-            m = _PY_DEF_RE.match(ln)
-            if m and not m.group(1).startswith("_"):
-                body = _symbol_block(lines, i)
-                units.append(_mk_unit(rel_path, "interface", f"sym:{m.group(1)}", body))
-    else:
-        for i, ln in enumerate(lines):
-            m = sym_re.match(ln) if sym_re else None
-            if m and not m.group(1).startswith("_"):
-                body = _symbol_block(lines, i)
-                units.append(_mk_unit(rel_path, "interface", f"sym:{m.group(1)}", body))
+    seen: set[str] = set()
+    for i, ln in enumerate(lines):
+        if single_re is not None:
+            mm = single_re.match(ln)
+            name = mm.group(1) if mm else None
+        else:
+            name = _export_symbol(ln)
+        if name and not name.startswith("_") and name not in seen:
+            seen.add(name)   # one unit per symbol name (guards bare `export default X` re-exports)
+            units.append(_mk_unit(rel_path, "interface", f"sym:{name}", _symbol_block(lines, i)))
     return units
 
 
@@ -229,8 +293,8 @@ def _symbol_block(lines: list[str], start: int, max_lines: int = 60) -> str:
     # stop at the next top-level declaration for tighter bounds
     for j in range(start + 1, end):
         if lines[j] and not lines[j][0].isspace() and (
-                _PY_DEF_RE.match(lines[j]) or _EXPORT_SYM_RE.match(lines[j])
-                or _PROTO_MSG_RE.match(lines[j])):
+                _PY_DEF_RE.match(lines[j]) or _PROTO_MSG_RE.match(lines[j])
+                or _export_symbol(lines[j]) is not None):
             end = j
             break
     return "\n".join(lines[start:end]).strip()
