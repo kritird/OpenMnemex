@@ -52,6 +52,10 @@ honor an explicit `--into <graph>`.
 1. `mnx_ingest.py probe --root <root>` → `{units[], counts, est_atoms, bytes_total, skipped_secrets}`.
    Units are already classified (`doc | interface | code-doc | config | skip`) and chunked along structure
    (docs by heading, code by **exported** symbol — private symbols are never emitted).
+   YAML/JSON are **shape-gated** (they are mostly generated data): an OpenAPI / JSON-Schema-shaped file
+   (`openapi:` / `swagger:` / `$schema`) → `interface`, an authored (commented) YAML config → `config`,
+   and everything else (data blobs, lockfiles, uncommented JSON) → `skip`. So a `.yaml` file showing up
+   under `skip` is expected, not a miss.
 2. On a **re-ingest**, diff against the prior manifest:
    `mnx_ingest.py delta --root <root> --manifest <graph_root>/.mnemex/ingest/<slug>.json`
    → `{added[], changed[], unchanged, orphans[]}`. **Extract only from `added` + `changed`** — unchanged

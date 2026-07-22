@@ -40,6 +40,11 @@ DOC_EXTS = {".md", ".rst", ".adoc", ".txt"}
 CODE_EXTS = {".py", ".ts", ".tsx", ".go", ".java", ".js", ".rb", ".rs"}
 SCHEMA_EXTS = {".proto", ".graphql", ".gql"}
 CONFIG_EXTS = {".tf", ".tfvars"}
+# YAML/JSON are NOT a plain extension add: they are mostly generated/data (fixtures, lockfiles, big
+# blobs), unlike .proto/.graphql which are always meaningful. They are shape-gated by _config_shape
+# from the file's head bytes — OpenAPI/JSON-Schema shape → interface, an authored (commented) YAML
+# config → config, everything else → skip (ingest quality finding #3).
+CONFIG_SHAPE_EXTS = {".yaml", ".yml", ".json"}
 BINARY_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".gz", ".tar", ".so",
                ".dylib", ".dll", ".bin", ".ico", ".woff", ".woff2", ".ttf", ".jar",
                ".class", ".pyc", ".wasm", ".mp4", ".mp3", ".exe"}
@@ -49,6 +54,14 @@ _SKIP_DIRS = {"node_modules", "dist", "build", "vendor", ".git", "__pycache__",
               ".mnemex", ".venv", "venv", "target"}
 _SKIP_NAME_RE = re.compile(r".*\.lock$|.*\.min\..*|.*\.map$|.*\.snap$", re.I)
 _CHANGELOG_RE = re.compile(r"^(changelog|changes|history|authors|contributors)\b", re.I)
+
+# YAML/JSON shape gate (finding #3). Head-byte probes: OpenAPI/JSON-Schema shape → interface,
+# an authored comment → config. A `*-lock.json` / `pnpm-lock.yaml` style generated data file is
+# skipped before shape detection even runs (the `.lock` suffix alone is caught by _SKIP_NAME_RE).
+_OPENAPI_YAML_RE = re.compile(r"^\s*(?:openapi|swagger)\s*:", re.M)
+_SCHEMA_JSON_RE = re.compile(r'"(?:\$schema|openapi|swagger)"\s*:')
+_YAML_COMMENT_RE = re.compile(r"^\s*#", re.M)
+_LOCK_DATA_RE = re.compile(r".*[-.]lock\.(?:json|ya?ml)$", re.I)
 
 # Secret guard — matched files are COUNTED but their bytes are NEVER opened.
 def _is_secret(name: str) -> bool:
@@ -84,13 +97,52 @@ def _file_hash(path: Path) -> str:
     return "sha1:" + hashlib.sha1(path.read_bytes()).hexdigest()
 
 
+def _read_head(path: Path, limit: int = 4096) -> Optional[str]:
+    """The leading `limit` chars for shape-gating YAML/JSON — a bounded peek, never the whole file
+    (a data blob can be huge). None on an undecodable/unreadable file (→ classify treats it skip)."""
+    try:
+        with path.open("r", encoding="utf-8", errors="strict") as fh:
+            return fh.read(limit)
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
 # --- classification ----------------------------------------------------------
 
-def classify(rel_path: str) -> str:
+def _config_shape(name: str, head: Optional[str]) -> str:
+    """Shape-gate a YAML/JSON file into interface|config|skip from its head bytes (finding #3).
+
+    The value-gate that keeps generated data (fixtures, lockfiles, big blobs) from flooding the
+    graph with noise atoms: OpenAPI / JSON-Schema shape → interface (a real contract); an authored,
+    commented YAML config → config (declared knobs); everything else → skip. With no head available
+    (a path-only classify call) the shape is unknowable, so the conservative answer is skip — the
+    real callers (probe/delta) always pass the head."""
+    if head is None:
+        return "skip"
+    if _LOCK_DATA_RE.match(name):
+        return "skip"
+    ext = os.path.splitext(name)[1].lower()
+    if ext == ".json":
+        # JSON has no comment convention, so it only extracts when it is schema/OpenAPI-shaped;
+        # a plain data document (config values, fixtures) stays skip.
+        return "interface" if _SCHEMA_JSON_RE.search(head) else "skip"
+    # yaml/yml
+    if _OPENAPI_YAML_RE.search(head):
+        return "interface"
+    if _YAML_COMMENT_RE.search(head):
+        return "config"
+    return "skip"
+
+
+def classify(rel_path: str, head: Optional[str] = None) -> str:
     """File-level kind by extension + path. One of: doc|interface|code-doc|config|skip.
 
     (A code file gets a finer per-unit kind at chunk time — interface for exported symbols,
-    code-doc for module/docstring headers — but its file-level bucket here is 'interface'.)"""
+    code-doc for module/docstring headers — but its file-level bucket here is 'interface'.)
+
+    `head` is the file's leading bytes, used only to shape-gate YAML/JSON (finding #3): the same
+    `.yaml` may be an OpenAPI contract (interface), a commented config (config), or generated data
+    (skip). Every other kind is decided from the path alone, so `head` may be omitted for them."""
     name = os.path.basename(rel_path)
     ext = os.path.splitext(name)[1].lower()
     parts = Path(rel_path).parts
@@ -106,6 +158,8 @@ def classify(rel_path: str) -> str:
         return "config"
     if ext in SCHEMA_EXTS:
         return "interface"
+    if ext in CONFIG_SHAPE_EXTS:
+        return _config_shape(name, head)
     if ext in CODE_EXTS:
         return "interface"     # finer split (interface vs code-doc) happens per unit
     if ext in DOC_EXTS:
@@ -354,7 +408,9 @@ def probe(root: str, include: Optional[str] = None, exclude: Optional[str] = Non
         if _is_secret(name):
             skipped_secrets += 1          # counted; bytes NEVER opened
             continue
-        kind = classify(rel)
+        # YAML/JSON classify by content, not just extension — peek a bounded head first (finding #3).
+        head = _read_head(p) if os.path.splitext(name)[1].lower() in CONFIG_SHAPE_EXTS else None
+        kind = classify(rel, head)
         if kind == "skip":
             counts["skip"] += 1
             continue
@@ -501,7 +557,8 @@ def delta(root: str, manifest: str, include: Optional[str] = None,
     unchanged = 0
     for p in sorted(_walk(rootp, inc, exc)):
         rel = str(p.relative_to(rootp))
-        if _is_secret(p.name) or classify(rel) == "skip":
+        head = _read_head(p) if os.path.splitext(p.name)[1].lower() in CONFIG_SHAPE_EXTS else None
+        if _is_secret(p.name) or classify(rel, head) == "skip":
             continue
         try:
             if p.stat().st_size > max_bytes:

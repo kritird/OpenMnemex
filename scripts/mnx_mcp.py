@@ -999,8 +999,10 @@ def register_tools(server: "FastMCP") -> None:
                  description="Walk → classify → chunk → hash the corpus at `root` into candidate "
                              "extraction units (doc|interface|code-doc|config, chunked by heading / "
                              "exported symbol) plus a scope estimate {counts, est_atoms, "
-                             "bytes_total, skipped_secrets} for gate #1. Read-only; private symbols "
-                             "and secrets are never emitted. Optional include/exclude globs.")
+                             "bytes_total, skipped_secrets} for gate #1. YAML/JSON are shape-gated "
+                             "(OpenAPI/JSON-Schema → interface, commented config → config, data "
+                             "blobs/lockfiles → skip). Read-only; private symbols and secrets are "
+                             "never emitted. Optional include/exclude globs.")
     def ingest_probe(root: str, include: Optional[str] = None, exclude: Optional[str] = None,
                      max_bytes: int = mnx_ingest.MAX_BYTES_DEFAULT) -> dict[str, Any]:
         return _ingest_probe(root, include, exclude, max_bytes)
