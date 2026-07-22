@@ -328,8 +328,8 @@ BLOCK    generate candidate pairs from cheap keys — REUSE simindex MinHash-LSH
          token index. (Avoids the O(n²) all-pairs blow-up; blocking is the standard ER scaling move.)
 SCORE    pairwise match probability per blocked pair — features: name/alias overlap, summary similarity,
          shared domain, shared links. Escalate only the ambiguous middle band to an LLM judge.
-CLUSTER  transitive-close the high-confidence matches into canonical entities (connected components /
-         correlation clustering); pick a canonical name; UNION the alias sets.
+CLUSTER  single-linkage transitive closure over the high-confidence pairs (union-find, bounded by the
+         `match` threshold) into canonical entities; pick a canonical name; UNION the alias sets.
 DISPOSE  each cluster → exactly ONE graph node:
              no match in graph      → CREATE
              matches an existing page → MERGE / UPDATE (fold; keep id)
@@ -346,6 +346,14 @@ band surfaces as `⚠ suggested` merges at gate #2; match and non-match are dete
 > ER runs **once per delta batch over {new atoms ∪ existing graph pages}**, not globally over the whole
 > graph every time — the manifest delta (§7) keeps the candidate set bounded, so ER stays a per-batch,
 > blocking-bounded cost even on a large graph.
+
+> [!NOTE]
+> Single-linkage can in principle over-merge by *chaining* (A–B and B–C dragging unrelated A and C into one
+> cluster). At the shipped `match=0.85` threshold this is not a practical risk: Jaccard geometry makes a
+> bridging node's union larger, which *lowers* its similarity with each neighbor, so a chain-forming "bridge"
+> pair rarely clears the bar. The deterministic alias-union pass keys on **id, not shared alias**, so two
+> facts tagged the same topical alias don't chain either. If a future higher-recall / lower-threshold ER mode
+> is added, revisit this with correlation clustering or a density guard.
 
 ---
 
