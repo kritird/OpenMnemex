@@ -31,11 +31,10 @@ Session-level contracts implemented here (§5.2):
     inside the graph root, the per-author mnemex home, or the ingest cache — never the
     caller's CWD/project. ``confine()`` is the one shared guard.
 
-The ``mcp`` SDK is an OPTIONAL extra (``pip install openmnemex[mcp]``, Python 3.10+); this
-module must stay importable without it (the packaging bridge imports every engine module,
-and the engine keeps its 3.9 floor), so the SDK import is soft and only ``serve()``/
-``create_server()`` require it. ``serve`` failures print to stderr — stdout belongs to the
-JSON-RPC protocol.
+The ``mcp`` SDK is an OPTIONAL extra (``pip install openmnemex[mcp]``); this module must stay
+importable without it (the packaging bridge imports every engine module, and the base install
+has no ``mcp`` dependency), so the SDK import is soft and only ``serve()``/``create_server()``
+require it. ``serve`` failures print to stderr — stdout belongs to the JSON-RPC protocol.
 
 CLI:
     serve   — run the stdio server (default; blocks until the host disconnects)
@@ -71,7 +70,7 @@ import mnx_stamp
 import mnx_status
 
 # Soft SDK import: the engine (and the packaging bridge, which imports every mnx_* module)
-# must work on 3.9 / without the [mcp] extra. Only building/running the server needs it.
+# must work without the [mcp] extra. Only building/running the server needs it.
 try:
     from mcp.server.fastmcp import FastMCP
     _MCP_IMPORT_ERROR: Optional[BaseException] = None

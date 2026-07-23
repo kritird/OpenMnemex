@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://pypi.org/project/openmnemex/"><img alt="PyPI" src="https://img.shields.io/pypi/v/openmnemex?label=PyPI&color=success"></a>
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="python" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
+  <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white">
   <img alt="claude code" src="https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2">
   <img alt="storage" src="https://img.shields.io/badge/storage-Markdown%20%2B%20git-181717?logo=git&logoColor=white">
   <img alt="vectors" src="https://img.shields.io/badge/vectors-none-critical">
@@ -338,7 +338,7 @@ Phase-by-phase breakdowns are in
 **Start with the Console** — it guides everything else:
 
 ```bash
-# 1. Open the OpenMnemex Console (needs Python 3.9+). Either run it without
+# 1. Open the OpenMnemex Console (needs Python 3.10+). Either run it without
 #    installing…
 uvx openmnemex@latest
 #    …or install it once, then run it (two steps — `pip` only installs):
@@ -355,7 +355,7 @@ openmnemex
 ```
 
 > [!TIP]
-> Requirements: Python 3.9+. `pip install openmnemex` brings everything the Console and engine
+> Requirements: Python 3.10+. `pip install openmnemex` brings everything the Console and engine
 > need ([`PyYAML`](https://pypi.org/project/PyYAML/) plus FastAPI/uvicorn for the Console — the
 > engine itself runs on the standard library + PyYAML alone). If something is missing, the Mnemex
 > commands report it and tell you what to install rather than failing cryptically.

@@ -28,7 +28,7 @@ Three helpers, one per SKILL step:
 (CLI dispatch, `mnx_mcp` tools) supply `mnx_common.now_utc()`, so the comparison logic
 stays deterministic and testable without monkeypatching the clock.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only (via mnx_common/mnx_config/mnx_compact/
+Dependencies: Python 3.10+ stdlib + PyYAML only (via mnx_common/mnx_config/mnx_compact/
 mnx_index/mnx_resolve/mnx_stage). See docs/script-contracts.md.
 """
 from __future__ import annotations

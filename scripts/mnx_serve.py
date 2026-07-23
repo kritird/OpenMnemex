@@ -61,7 +61,7 @@ CLI:
     graphs                                        — the discovered-graphs payload as JSON
     info                                          — identity + web-deps availability
 
-Dependencies: engine = Python 3.9+ stdlib + PyYAML; serving needs FastAPI + uvicorn
+Dependencies: engine = Python 3.10+ stdlib + PyYAML; serving needs FastAPI + uvicorn
 (core deps of the published package).
 """
 from __future__ import annotations

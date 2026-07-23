@@ -25,7 +25,7 @@ staging batch into the shared graph and clears it. This helper owns the staging 
 Strictly local: this script never clones, syncs, commits, or touches the graph clone. It only
 reads the binding (via mnx_binding) to discover the per-graph staging folder.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only (via mnx_binding / mnx_common). See docs/06.
+Dependencies: Python 3.10+ stdlib + PyYAML only (via mnx_binding / mnx_common). See docs/06.
 """
 from __future__ import annotations
 

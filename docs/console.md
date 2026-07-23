@@ -12,7 +12,7 @@
 ## 🚀 Run it
 
 ```bash
-# One-off, no install (needs Python 3.9+) — the bare command IS the Console:
+# One-off, no install (needs Python 3.10+) — the bare command IS the Console:
 uvx openmnemex
 
 # Or install once, then:

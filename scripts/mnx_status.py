@@ -10,7 +10,7 @@ Strictly read-only: it never clones, syncs, commits, or repairs. Every section i
 best-effort and guarded, so a partially-scaffolded or broken graph still yields a useful
 status instead of a traceback. See USER-JOURNEY-FINDINGS #2.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only (via the other mnx_* helpers). See docs/06.
+Dependencies: Python 3.10+ stdlib + PyYAML only (via the other mnx_* helpers). See docs/06.
 """
 from __future__ import annotations
 

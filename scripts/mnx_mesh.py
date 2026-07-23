@@ -18,7 +18,7 @@ are untyped by default; a link to a page that does not exist yet is a red-link, 
 that page is created. NON-authoritative fuzzy suggestions (mnx_simindex) are surfaced to the skill
 for HITL, never written here.
 
-Python 3.9+, stdlib + PyYAML. Imports mnx_common + mnx_phonebook.
+Python 3.10+, stdlib + PyYAML. Imports mnx_common + mnx_phonebook.
 """
 from __future__ import annotations
 

@@ -54,7 +54,7 @@ Contract: with the single exception of the pre-commit-gate DENY, hooks are ADVIS
 raise and never block on internal errors — a failing hook must not disrupt the user's session
 (the gate fails open). See docs/skills-commands-hooks.md §6.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only.
+Dependencies: Python 3.10+ stdlib + PyYAML only.
 """
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ phonebook — that would be the global write-path index the architecture rejects
 DERIVED: regenerated from the cluster indexes (which are themselves derived from the nodes);
 never hand-edited, never 3-way-merged (W1's `mnx-regen` driver regenerates it on conflict).
 
-Python 3.9+, stdlib + PyYAML only. Imports mnx_common only.
+Python 3.10+, stdlib + PyYAML only. Imports mnx_common only.
 """
 from __future__ import annotations
 

@@ -19,7 +19,7 @@ Two modes, matching the asymmetry between the two sources:
 
 Both stop on no-progress / full-coverage OR at the pass cap (config `max_glean_passes`, default 2).
 
-Dependencies: Python 3.9+ stdlib only (JSON I/O). Imports mnx_common for emit. See docs/script-contracts.md.
+Dependencies: Python 3.10+ stdlib only (JSON I/O). Imports mnx_common for emit. See docs/script-contracts.md.
 """
 from __future__ import annotations
 

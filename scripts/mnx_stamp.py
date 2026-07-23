@@ -19,7 +19,7 @@ retried flush within a session cannot duplicate.
 Local kinds (git-local / plain-local) are never reset, so stamps are appended straight
 to the registry (already durable) and flush is a noop.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only (via mnx_binding). See docs/06.
+Dependencies: Python 3.10+ stdlib + PyYAML only (via mnx_binding). See docs/06.
 """
 from __future__ import annotations
 

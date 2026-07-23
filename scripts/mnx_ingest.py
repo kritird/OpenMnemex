@@ -16,7 +16,7 @@ Subcommands (see docs/script-contracts.md §mnx_ingest):
   delta    --root <dir> --manifest <path>              -> {added[], changed[], unchanged, orphans[]}
   manifest-write --graph <root> --source-slug <s> --json  (stdin: files map) -> {path, files}
 
-Dependencies: Python 3.9+ stdlib only (hashlib/re/subprocess). Imports mnx_common for emit.
+Dependencies: Python 3.10+ stdlib only (hashlib/re/subprocess). Imports mnx_common for emit.
 """
 from __future__ import annotations
 

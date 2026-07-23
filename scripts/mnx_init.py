@@ -16,7 +16,7 @@ CLI (thin; the SKILL keeps driving the interactive flow):
     init --path <dir> | --remote <url> [--team ...] [--org ...]
                                                      — scaffold + merge-driver + stamp + doctor
 
-Dependencies: Python 3.9+ stdlib + PyYAML (via the other mnx_* helpers). See docs/binding-and-graph-sync.md.
+Dependencies: Python 3.10+ stdlib + PyYAML (via the other mnx_* helpers). See docs/binding-and-graph-sync.md.
 """
 from __future__ import annotations
 

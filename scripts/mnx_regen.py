@@ -21,7 +21,7 @@ Git invokes:  mnx_regen.py merge %O %A %B %P
   %O ancestor, %A current/ours (WRITE THE RESULT HERE), %B other, %P pathname in the repo.
 Exit 0 = resolved; non-zero = leave conflict for a human.
 
-Python 3.9+, stdlib + PyYAML. Imports mnx_common, mnx_index, mnx_phonebook.
+Python 3.10+, stdlib + PyYAML. Imports mnx_common, mnx_index, mnx_phonebook.
 """
 from __future__ import annotations
 

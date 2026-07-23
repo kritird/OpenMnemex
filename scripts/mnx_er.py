@@ -16,7 +16,7 @@ The Fellegi-Sunter three-way split maps to the HITL gate:
 One entity → one node (DP5): intra-batch duplicates collapse BEFORE staging; a cluster that matches an
 existing page MERGEs into it. Runs once per delta batch over {new atoms ∪ existing graph pages}.
 
-Dependencies: Python 3.9+ stdlib + PyYAML (via mnx_common). Imports mnx_simindex (the blocker) + mnx_common.
+Dependencies: Python 3.10+ stdlib + PyYAML (via mnx_common). Imports mnx_simindex (the blocker) + mnx_common.
 """
 from __future__ import annotations
 

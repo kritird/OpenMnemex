@@ -3,7 +3,7 @@
 The single source of truth for time, parsing, and id rules. Every other Mnemex
 script imports from here; nothing else writes a timestamp or mints an id.
 
-Dependencies: Python 3.9+ stdlib + PyYAML only. See docs/script-contracts.md.
+Dependencies: Python 3.10+ stdlib + PyYAML only. See docs/script-contracts.md.
 """
 from __future__ import annotations
 

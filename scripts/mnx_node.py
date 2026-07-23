@@ -28,7 +28,7 @@ freshness invariants (9b, 9d) hold BY CONSTRUCTION.
 Called under the team lock in the promote/consolidate flow (the skill holds it — same expectation as
 mnx_mesh / mnx_index; this writer does not take the lock itself).
 
-Dependencies: Python 3.9+ stdlib + PyYAML. Imports mnx_common.
+Dependencies: Python 3.10+ stdlib + PyYAML. Imports mnx_common.
 """
 from __future__ import annotations
 

@@ -28,7 +28,7 @@ A team lock handle is NOT threaded across calls (a CLI retry_push/abort runs in 
 after a crash) — the lock file path is instead deterministically rederived from graph_root+team
 via mnx_common.state_dir, matching mnx_lock's own private _lock_path() for a real team folder.
 
-Dependencies: Python 3.9+ stdlib + PyYAML (via mnx_binding). See docs/06.
+Dependencies: Python 3.10+ stdlib + PyYAML (via mnx_binding). See docs/06.
 """
 from __future__ import annotations
 

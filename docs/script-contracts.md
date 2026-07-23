@@ -10,7 +10,7 @@ This document specifies the script contracts — signatures, inputs, outputs, in
 `scripts/` implement them: `mnx_common`, `mnx_config`, `mnx_decay`, `mnx_resolve`, `mnx_compact`,
 `mnx_stamp`, `mnx_stage`, `mnx_node`, `mnx_index`, `mnx_lock`, `mnx_doctor`, `mnx_status`, and the
 `mnx_binding` entry point the session hook and every skill depend on to locate the graph. All scripts
-are Python 3.9+, standard library + `PyYAML` only, runnable as
+are Python 3.10+, standard library + `PyYAML` only, runnable as
 `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.py …`, and emit machine-readable `STATUS=OK|FAIL` plus
 JSON on stdout so a skill can parse the result.
 

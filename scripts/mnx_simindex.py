@@ -14,7 +14,7 @@ It is deliberately:
   * ZERO-DEPENDENCY — pure-python MinHash + LSH banding (deterministic hashing via hashlib), so
     no model/embedding dependency. Embeddings are a possible later upgrade; MinHash ships first.
 
-Python 3.9+, stdlib + PyYAML. Imports mnx_common only.
+Python 3.10+, stdlib + PyYAML. Imports mnx_common only.
 """
 from __future__ import annotations
 

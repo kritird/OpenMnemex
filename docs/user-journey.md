@@ -56,7 +56,7 @@ flowchart LR
 ```
 
 ```bash
-# 1. Open the Console (Python 3.9+). Run it without installing…
+# 1. Open the Console (Python 3.10+). Run it without installing…
 uvx openmnemex
 #    …or install it once, then run it (two steps — `pip` only installs):
 pip install openmnemex
